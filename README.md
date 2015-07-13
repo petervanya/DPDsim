@@ -6,7 +6,7 @@ A dissipative particle dynamics (DPD) simulation based on work of [1,2].
 * create a System class
 
 ###TO DO
-* add cutoff radius *r*<sup>c</sup> other than 1
+* add cutoff radius *r*<sub>c</sub> other than 1
 * consider only steps with non-zero forces
 
 ### References
