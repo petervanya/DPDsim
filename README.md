@@ -1,12 +1,12 @@
 # DPDsim
 A dissipative particle dynamics (DPD) simulation based on work of [1,2].
 
-##DONE
+###DONE
 * add PBC to run correctly
-* create System class
+* create a System class
 
-##TO DO
-* add cutoff radius rc other than 1
+###TO DO
+* add cutoff radius *r*<sup>c</sup> other than 1
 * consider only steps with non-zero forces
 
 ### References
