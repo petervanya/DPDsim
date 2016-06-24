@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Usage:
     main.py <input>
 
@@ -13,7 +13,7 @@ import numpy as np
 import yaml
 import os
 from docopt import docopt
-from dpd_functions import init_pos, init_vel
+from dpd_functions import init_pos, init_vel, integrate
 
 
 class mydict(dict):
@@ -28,13 +28,14 @@ if __name__ == "__main__":
     seed = 1234
     np.random.seed(seed)
     
-    sp = mydict(L=data["L"], dt=data["dt"], numsteps=data["num-steps"],\
+    sp = mydict(L=data["L"], dt=data["dt"], Nt=data["num-steps"],\
                 kBT=data["kBT"], gamma=data["gamma"], rc=data["rc"],\
                 thermo=data["thermo"], seed=seed)
 
     # bead types
     bead_types = data["bead-types"]
     N = sum(bead_types.values())
+    rho = float(N/sp.L**3)
     Nbt = len(bead_types.keys())
     bt2num = {}
     for i, bt in enumerate(bead_types): bt2num[bt] = i+1
@@ -43,16 +44,15 @@ if __name__ == "__main__":
         bead_list += [bt2num[k]]*v
 
     # interaction parameters
-    inter_params = {}
+    int_params = {}
     for k, v in data["inter-params"].items():
         b1, b2 = k.split()
-        inter_params[(bt2num[b1], bt2num[b2])] = v
-        inter_params[(bt2num[b2], bt2num[b1])] = v
-    print(inter_params)
+        int_params[(bt2num[b1], bt2num[b2])] = v
+        int_params[(bt2num[b2], bt2num[b1])] = v
 
     print(" ============== \n DPD simulation \n ==============")
-    print("Particles: %i | Temp: %.1f | Steps: %i | dt: %.2f | thermo: %i"
-          % (N, data["kBT"], data["num-steps"], data["dt"], data["thermo"]))
+    print("Beads: %i | rho: %.2f | kBT: %.1f | Steps: %i | dt: %.2f | thermo: %i"
+          % (N, rho, sp.kBT, sp.Nt, sp.dt, sp.thermo))
 
     dumpdir = "Dump"
     if not os.path.exists(dumpdir):
@@ -60,16 +60,11 @@ if __name__ == "__main__":
 
     # init system
     print("Initialising the system...")
-    pos_list, E = init_pos(N, inter_params, sp)
-    vel_list = init_vel(N, data["kBT"])
-#
-#    # run system
-#    print("Starting integration...")
-#    xyz_frames, E = integrate(pos_list, vel_list, sp)
-#
-#    # print into file
-#    Nf = xyz_frames.shape[-1]
-#        for i in range(Nf):
-#            fname = "Dump/dump_" + str((i+1)*thermo) + ".xyz"
-#            save_xyzmatrix(fname, xyz_frames[:, :, i])
-#    print_timing()
+    pos_list, E = init_pos(N, int_params, bead_list, sp)
+    vel_list = init_vel(N, sp.kBT)
+
+    # run system
+    print("Starting integration...")
+    xyz_frames, E = integrate(pos_list, vel_list, int_params, bead_list, sp)
+
+
