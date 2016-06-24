@@ -1,15 +1,30 @@
 # DPDsim
-A dissipative particle dynamics (DPD) simulation based on work of [1,2].
+23/06/16
 
-###DONE
-* add PBC to run correctly
-* create a System class
+Dissipative particle dynamics simulation of non-bonded particles.
+Based on [http://dx.doi.org/10.1063/1.474784](Groot-Warren, JCP, 1997).
 
-###TO DO
-* add cutoff radius *r*<sub>c</sub> other than 1
-* consider only steps with non-zero forces
+### Run
+`./dpd_sim input.yaml`
 
-### References
-[1] P. J. Hoogerbrugge and J. M. V. A. Koelman, *Europhys. Lett*, **19** (3) (1992)
+### Requirements
+* Python3
+* `pip3 install numpy docopt yaml`
 
-[2] R. D. Groot and P. B. Warren, *J. Chem. Phys.* **107** (11) (1997)
+
+## TODO
+* [L] Add Verlet/neighbour list (as option)
+* [L] Add bonds
+* [M] Add pressure
+* [S] Generalise velocity-Verlet algo
+
+
+## Testing
+23/06/16
+Strong divergence in temperature. Check force arrows, integration and dt.
+
+24/06/16
+Double-checked arrows of vectors, fixed random force. 
+Temperature now stabilised, staying at about 3.0 kBT.
+Next explore why not around 1.0 kBT.
+
