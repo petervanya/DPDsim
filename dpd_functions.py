@@ -128,24 +128,26 @@ def integrate(pos_list, vel_list, iparams, blist, sp):
     # N = pos_list.shape[0]
     # Nframes = int(sp.Nt // sp.thermo)
     # xyz_frames = np.zeros((N, 3, Nframes))
-    E = np.zeros(sp.Nt)
     T = np.zeros(sp.Nt)
+    E = np.zeros(sp.Nt)
 
     # 1st Verlet step
     F = force_list(pos_list, vel_list, iparams, blist, sp)
     pos_list = pos_list + vel_list * sp.dt + F * sp.dt**2 / 2
-    E[0] = tot_KE(vel_list) + tot_PE(pos_list, iparams, blist, sp)
     T[0] = temperature(vel_list)
+    if sp.saveE:
+        E[0] = tot_KE(vel_list) + tot_PE(pos_list, iparams, blist, sp)
+    save_xyzmatrix("Dump/dump_%i.xyz" % 0, blist, pos_list)
 
     # Other steps
     for i in range(1, sp.Nt):
         pos_list, vel_list, Npass = vel_verlet_step(pos_list, vel_list, iparams, blist, sp)
-        E[i] = tot_KE(vel_list) + tot_PE(pos_list, iparams, blist, sp)
+        if sp.saveE:
+            E[i] = tot_KE(vel_list) + tot_PE(pos_list, iparams, blist, sp)
         T[i] = temperature(vel_list)
-        if i % sp.thermo == 0:
-            fname = "Dump/dump_%i.xyz" % (i*sp.thermo)
-            save_xyzmatrix(fname, pos_list)
-            print("Step: %i, Temperature: %f" % (i, T[i]))
-    return E
+        if (i+1) % sp.thermo == 0:
+            save_xyzmatrix("Dump/dump_%i.xyz" % (i+1), blist, pos_list)
+            print("Step: %i, Temperature: %f" % (i+1, T[i]))
+    return T, E
 
 
