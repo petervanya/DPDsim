@@ -12,8 +12,9 @@ Simulate DPD binary mixture.
 import numpy as np
 import yaml
 import os
+import time
 from docopt import docopt
-from dpd_functions import init_pos, init_vel, integrate
+from dpd_functions import init_pos, init_vel, integrate, temperature
 
 
 class mydict(dict):
@@ -30,7 +31,7 @@ if __name__ == "__main__":
     
     sp = mydict(L=data["L"], dt=data["dt"], Nt=data["num-steps"],\
                 kBT=data["kBT"], gamma=data["gamma"], rc=data["rc"],\
-                thermo=data["thermo"], seed=seed)
+                thermo=data["thermo"], seed=seed, saveE=data["save-energy"])
 
     # bead types
     bead_types = data["bead-types"]
@@ -62,9 +63,13 @@ if __name__ == "__main__":
     print("Initialising the system...")
     pos_list, E = init_pos(N, int_params, bead_list, sp)
     vel_list = init_vel(N, sp.kBT)
+    print("Temperature: %.2f" % temperature(vel_list))
 
     # run system
     print("Starting integration...")
-    xyz_frames, E = integrate(pos_list, vel_list, int_params, bead_list, sp)
+    ti = time.time()
+    T, E = integrate(pos_list, vel_list, int_params, bead_list, sp)
+    tf = time.time()
+    print("Simulation time: %.2f s." % (tf-ti))
 
 
