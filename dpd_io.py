@@ -6,17 +6,13 @@ Input-output routines
 import numpy as np
 
 
-def save_xyzmatrix(fname, mat, init_char="1"):
+def save_xyzmatrix(fname, names, mat):
     """Save a coordinate matrix in a xyz format compatible with VMD"""
-    M, N = mat.shape
-    with open(fname, "w") as f:
-        f.write(str(M) + "\nbla\n")
-        for i in range(M):
-            line = init_char + "   "
-            for j in range(N):
-                line += str(mat[i, j]) + "   "
-            line += "\n"
-            f.write(line)
+    M = mat.shape[0]
+    s = "%i\nbla\n" % M
+    for i in range(M):
+        s += "%i\t%.3f\t%.3f\t%.3f\n" % (names[i], mat[i, 0], mat[i, 1], mat[i, 2])
+    open(fname, "w").write(s)
 
 
 def read_xyzmatrix(fname):
