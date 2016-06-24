@@ -17,6 +17,7 @@ Based on [http://dx.doi.org/10.1063/1.474784](Groot-Warren, JCP, 1997).
 * [L] Add bonds
 * [M] Add pressure
 * [S] Generalise velocity-Verlet algo
+* [S] Make random number generation efficient via Box-Muller transform
 
 
 ## Testing
