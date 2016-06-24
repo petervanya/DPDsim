@@ -15,13 +15,13 @@ def wR(r, rc=1.0):
     return (1 - norm(r)/rc) if norm(r) < rc else 0.0
 
 
-def theta():
-    return np.random.randn()  # MAKE THIS EFFICIENT
+def theta(dt):
+    return np.random.randn()/sqrt(dt)
     
 
-def F_C(r, a_ij=25.0):
+def F_C(r, a=25.0):
     """Conservative DPD force"""
-    return a_ij*wR(r)*r/norm(r)
+    return a*wR(r)*r/norm(r)
     
     
 def F_D(r, v, gamma=4.5):
@@ -29,24 +29,19 @@ def F_D(r, v, gamma=4.5):
     return -gamma*wR(r)**2*np.dot(r, v)*r/norm(r)**2
 
 
-def F_R(r, gamma, kBT=1.0):
+def F_R(r, sp):
     """Random DPD force, F^R = -sigma wR(r) theta rnorm"""
-    return sqrt(2*gamma*kBT)*wR(r)*theta()*r/norm(r)
+    return sqrt(2*sp.gamma*sp.kBT)*wR(r)*theta(sp.dt)*r/norm(r)
     
     
-def F_tot(r, v, a_ij, sp):   # ADD BEAD TYPE
+def F_tot(r, v, a, sp):   # ADD BEAD TYPE
     """Total force between two particles"""
-    return F_C(r, a_ij) + F_D(r, v) + F_R(r, sp.gamma, sp.kBT)
+    return F_C(r, a) + F_D(r, v) + F_R(r, sp)
 
 
 def V_DPD(norm_r, inter_params, sp):
     """Conservative potential energy between two beads"""
     pass
-
-
-def temperature(vel_list):
-    Ndof = len(vel_list)   # Number of degrees of freedom, NOT TRUE, FIX!
-    return tot_KE(vel_list)/(3./2*(Ndof-6))
 
 
 def tot_PE(pos_list, iparams, blist, sp):
@@ -55,7 +50,6 @@ def tot_PE(pos_list, iparams, blist, sp):
     N = pos_list.shape[0]
     for i in range(N):
         for j in range(i+1, N):
-#            print(i, j)
             E += iparams[(blist[i], blist[j])]/2 *\
                  (1 - norm(pos_list[i] - pos_list[j])/sp.rc)**2
     return E
@@ -71,13 +65,17 @@ def init_pos(N, iparams, blist, sp):
     np.random.seed(sp.seed)
     pos_list = np.random.rand(N, 3) * sp.L
     E = tot_PE(pos_list, iparams, blist, sp)
-#    E = 0.0
     return pos_list, E
 
 
 def init_vel(N, kBT):
     """Initialise velocities"""
-    return np.random.randn(N, 3) * 3*kBT
+    return np.random.randn(N, 3) * kBT
+
+
+def temperature(vel_list):
+    Ndof = len(vel_list)-6  # Number of degrees of freedom, NOT SURE, FIX!
+    return tot_KE(vel_list)/(3./2*Ndof)
 
 
 def force_list(pos_list, vel_list, iparams, blist, sp):
@@ -91,11 +89,11 @@ def force_list(pos_list, vel_list, iparams, blist, sp):
     inv_cell = np.linalg.pinv(cell)
     for i in range(N):
         for j in range(i):
-            dr = pos_list[j] - pos_list[i]
+            dr = pos_list[i] - pos_list[j]       # rij = ri - rj
             G = np.dot(inv_cell, dr)
             G_n = G - np.round(G)
             dr_n = np.dot(cell, G_n)
-            v_ij = vel_list[j] - vel_list[i]
+            v_ij = vel_list[i] - vel_list[j]     # vij = vi - vj
             force_mat[i, j] = F_tot(dr_n, v_ij, iparams[(blist[i], blist[j])], sp)
 
     force_mat -= np.transpose(force_mat, (1, 0, 2))
