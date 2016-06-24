@@ -1,19 +1,16 @@
 # Input file for home-made DPD simulation
-L: 6.0
-dt: 0.02
-num-steps: 1000
+L: 5.0
+dt: 0.05
+num-steps: 100
 kBT: 1.0
 gamma: 4.5
 rc: 1.0
-thermo: 10     # print coords this many times
-
+thermo: 5        # print coords this many times
 bead-types:     # number (future add: mass)
-    A: 50 #324
-    B: 50 #324
-
+    A: 200
+    B: 200
 inter-params:   # a_ij (future add: gamma, rc)
     A A: 25.0
     A B: 40.0
     B B: 25.0
-
-
+save-energy: False

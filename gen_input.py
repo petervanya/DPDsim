@@ -32,6 +32,7 @@ NA = int(args["--NA"])
 NB = int(args["--NB"])
 aii = float(args["--aii"])
 aij = float(args["--aij"])
+saveE = False
 
 
 s = "# Input file for home-made DPD simulation\n"
@@ -51,6 +52,7 @@ s += "inter-params:   # a_ij (future add: gamma, rc)\n"
 s += "    A A: %.1f\n" % aii
 s += "    A B: %.1f\n" % aij
 s += "    B B: %.1f\n" % aii
+s += "save-energy: %r\n" % saveE
 
 open("input.yaml", "w").write(s)
 print("File written in input.yaml")
