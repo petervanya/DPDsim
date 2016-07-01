@@ -13,8 +13,8 @@ import numpy as np
 import yaml
 import os
 import time
+import copy
 from docopt import docopt
-from dpd_functions import init_pos, init_vel, integrate, temperature
 
 
 class mydict(dict):
@@ -29,47 +29,67 @@ if __name__ == "__main__":
     seed = 1234
     np.random.seed(seed)
     
-    sp = mydict(L=data["L"], dt=data["dt"], Nt=data["num-steps"],\
-                kBT=data["kBT"], gamma=data["gamma"], rc=data["rc"],\
-                thermo=data["thermo"], seed=seed, saveE=data["save-energy"])
-
     # bead types
     bead_types = data["bead-types"]
     N = sum(bead_types.values())
-    rho = float(N/sp.L**3)
     Nbt = len(bead_types.keys())
+    rho = float(N/float(data["L"])**3)
     bt2num = {}
-    for i, bt in enumerate(bead_types): bt2num[bt] = i+1
+    for i, bt in enumerate(bead_types): bt2num[bt] = i
     bead_list = []
     for k, v in bead_types.items():
         bead_list += [bt2num[k]]*v
 
     # interaction parameters
-    int_params = {}
-    for k, v in data["inter-params"].items():
-        b1, b2 = k.split()
-        int_params[(bt2num[b1], bt2num[b2])] = v
-        int_params[(bt2num[b2], bt2num[b1])] = v
+    if data["use-numba"]:
+        int_params = np.ones((Nbt, Nbt))*25.0
+        for k, v in data["inter-params"].items():
+            b1, b2 = k.split()
+            int_params[bt2num[b1], bt2num[b2]] = v
+            int_params[bt2num[b2], bt2num[b1]] = v
+
+
+    sp = mydict(L=data["L"], dt=data["dt"], Nt=data["num-steps"],\
+                kT=data["kT"], gamma=data["gamma"], rc=data["rc"],\
+                Nbt=Nbt, thermo=data["thermo"], seed=seed, \
+                saveE=data["save-energy"], use_numba=data["use-numba"])
 
     print(" ============== \n DPD simulation \n ==============")
-    print("Beads: %i | rho: %.2f | kBT: %.1f | Steps: %i | dt: %.2f | thermo: %i"
-          % (N, rho, sp.kBT, sp.Nt, sp.dt, sp.thermo))
+    print("Beads: %i | rho: %.2f | kT: %.1f | Steps: %i | dt: %.2f | thermo: %i"
+          % (N, rho, sp.kT, sp.Nt, sp.dt, sp.thermo))
 
     dumpdir = "Dump"
     if not os.path.exists(dumpdir):
         os.makedirs(dumpdir)
 
-    # init system
-    print("Initialising the system...")
-    pos_list, E = init_pos(N, int_params, bead_list, sp)
-    vel_list = init_vel(N, sp.kBT)
-    print("Temperature: %.2f" % temperature(vel_list))
+    if sp.use_numba == True:
+        print("Using Numba.")
+        # Is this kosher?
+        from dpd_functions_numba import init_pos, init_vel, integrate, temperature
 
-    # run system
-    print("Starting integration...")
-    ti = time.time()
-    T, E = integrate(pos_list, vel_list, int_params, bead_list, sp)
-    tf = time.time()
-    print("Simulation time: %.2f s." % (tf-ti))
+        print("Initialising the system...")
+        pos_list = init_pos(N, int_params, bead_list, sp.L, sp.rc)
+        vel_list = init_vel(N, sp.kT)
+        print("Temperature: %.2f" % temperature(vel_list))
+ 
+        print("Starting integration...")
+        ti = time.time()
+        T, E = integrate(pos_list, vel_list, int_params, bead_list, sp)
+        tf = time.time()
+        print("Simulation time: %.2f s." % (tf-ti))
+        
+    else:
+        # Is this kosher?
+        from dpd_functions import init_pos, init_vel, integrate, temperature
+        print("Initialising the system...")
+        pos_list, E = init_pos(N, int_params, bead_list, sp)
+        vel_list = init_vel(N, sp.kT)
+        print("Temperature: %.2f" % temperature(vel_list))
+ 
+        print("Starting integration...")
+        ti = time.time()
+        T, E = integrate(pos_list, vel_list, int_params, bead_list, sp)
+        tf = time.time()
+        print("Simulation time: %.2f s." % (tf-ti))
 
 
