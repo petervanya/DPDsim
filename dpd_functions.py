@@ -31,10 +31,10 @@ def F_D(r, v, gamma=4.5):
 
 def F_R(r, sp):
     """Random DPD force, F^R = -sigma wR(r) theta rnorm"""
-    return sqrt(2*sp.gamma*sp.kBT)*wR(r)*theta(sp.dt)*r/norm(r)
-    
-    
-def F_tot(r, v, a, sp):   # ADD BEAD TYPE
+    return sqrt(2*sp.gamma*sp.kT)*wR(r)*theta(sp.dt)*r/norm(r)
+
+
+def F_tot(r, v, a, sp):
     """Total force between two particles"""
     return F_C(r, a) + F_D(r, v) + F_R(r, sp)
 
@@ -68,9 +68,9 @@ def init_pos(N, iparams, blist, sp):
     return pos_list, E
 
 
-def init_vel(N, kBT):
+def init_vel(N, kT):
     """Initialise velocities"""
-    return np.random.randn(N, 3) * kBT
+    return np.random.randn(N, 3) * kT
 
 
 def temperature(vel_list):
@@ -81,7 +81,7 @@ def temperature(vel_list):
 def force_list(pos_list, vel_list, iparams, blist, sp):
     """Force matrix. Input:
     * pos_list: (N, 3) xyz matrix
-    * iparams: dict matching bead types to a_ij
+    * iparams: (Nbt, Nbt) matrix with interaction params
     * blist: list of bead types"""
     N = pos_list.shape[0]
     force_mat = np.zeros((N, N, 3))
@@ -121,7 +121,7 @@ def integrate(pos_list, vel_list, iparams, blist, sp):
     Mass set to 1.0. Input:
     * pos_list: (N, 3) matrix
     * vel_list: (N, 3) matrix
-    * iparams: dict mapping bead type to a_ij
+    * iparams: (Nbt, Nbt) matrix with interaction params
     * blist: list of bead types (bead list)
     * sp: misc system params
     """
