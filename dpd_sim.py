@@ -41,13 +41,11 @@ if __name__ == "__main__":
         bead_list += [bt2num[k]]*v
 
     # interaction parameters
-    if data["use-numba"]:
-        int_params = np.ones((Nbt, Nbt))*25.0
-        for k, v in data["inter-params"].items():
-            b1, b2 = k.split()
-            int_params[bt2num[b1], bt2num[b2]] = v
-            int_params[bt2num[b2], bt2num[b1]] = v
-
+    int_params = np.ones((Nbt, Nbt))*25.0
+    for k, v in data["inter-params"].items():
+        b1, b2 = k.split()
+        int_params[bt2num[b1], bt2num[b2]] = v
+        int_params[bt2num[b2], bt2num[b1]] = v
 
     sp = mydict(L=data["L"], dt=data["dt"], Nt=data["num-steps"],\
                 kT=data["kT"], gamma=data["gamma"], rc=data["rc"],\
@@ -68,7 +66,7 @@ if __name__ == "__main__":
         from dpd_functions_numba import init_pos, init_vel, integrate, temperature
 
         print("Initialising the system...")
-        pos_list = init_pos(N, int_params, bead_list, sp.L, sp.rc)
+        pos_list = init_pos(N, int_params, bead_list, sp.L, sp.rc, sp.seed)
         vel_list = init_vel(N, sp.kT)
         print("Temperature: %.2f" % temperature(vel_list))
  
