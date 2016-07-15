@@ -8,6 +8,7 @@ import numpy as np
 from numpy import sqrt
 from numpy.linalg import norm
 from dpd_io import save_xyzmatrix
+import time
 
 
 def wR(r, rc=1.0):
@@ -125,11 +126,8 @@ def integrate(pos_list, vel_list, iparams, blist, sp):
     * blist: list of bead types (bead list)
     * sp: misc system params
     """
-    # N = pos_list.shape[0]
-    # Nframes = int(sp.Nt // sp.thermo)
-    # xyz_frames = np.zeros((N, 3, Nframes))
-    T = np.zeros(sp.Nt)
-    E = np.zeros(sp.Nt)
+    T, E = np.zeros(sp.Nt), np.zeros(sp.Nt)
+    ti = time.time()
 
     # 1st Verlet step
     F = force_list(pos_list, vel_list, iparams, blist, sp)
@@ -138,6 +136,7 @@ def integrate(pos_list, vel_list, iparams, blist, sp):
     if sp.saveE:
         E[0] = tot_KE(vel_list) + tot_PE(pos_list, iparams, blist, sp)
     save_xyzmatrix("Dump/dump_%i.xyz" % 0, blist, pos_list)
+    print("Step: %i | T: %.2f | Time: %.2f" % (1, T[0], time.time()-ti))
 
     # Other steps
     for i in range(1, sp.Nt):
@@ -147,7 +146,7 @@ def integrate(pos_list, vel_list, iparams, blist, sp):
         T[i] = temperature(vel_list)
         if (i+1) % sp.thermo == 0:
             save_xyzmatrix("Dump/dump_%i.xyz" % (i+1), blist, pos_list)
-            print("Step: %i, Temperature: %f" % (i+1, T[i]))
+            print("Step: %i | T: %.2f | Time: %.2f" % (i+1, T[i], time.time()-ti))
     return T, E
 
 
