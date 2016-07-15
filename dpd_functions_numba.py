@@ -6,89 +6,95 @@ A collection of functions for the DPD simulation.
 """
 import numpy as np
 from numpy import sqrt
+from numpy.random import rand, randn
 from numpy.linalg import norm
 from numba import jit, float64, int64
 from dpd_io import save_xyzmatrix
+import time
 
 
-def wR(r, rc=1.0):
+@jit(float64(float64[:]), nopython=True)
+def norm_numba(r):
+    rn = 0.0
+    for ri in r:
+        rn += ri*ri
+    return sqrt(rn)
+
+
+@jit(float64(float64[:], float64[:]), nopython=True)
+def dot_numba(r, v):
+    rv = 0.0
+    n = len(r)
+    for i in range(n):
+        rv += r[i]*v[i]
+    return rv
+
+
+@jit(float64(float64[:], float64), nopython=True)
+def wR(r, rc):
     """Weight function"""
-    return (1 - norm(r)/rc) if norm(r) < rc else 0.0
+    nr = norm_numba(r)
+    return (1 - nr/rc) if nr/rc < 1.0 else 0.0
 
 
-def theta(dt):
-    return np.random.randn()/sqrt(dt)
-    
-
-def F_C(r, a=25.0):
-    """Conservative DPD force"""
-    return a*wR(r)*r/norm(r)
-    
-    
-def F_D(r, v, gamma=4.5):
-    """Dissipative DPD force, FD = -gamma wD(r) (rnorm*v) rnorm"""
-    return -gamma*wR(r)**2*np.dot(r, v)*r/norm(r)**2
-
-
-def F_R(r, sp):
-    """Random DPD force, F^R = -sigma wR(r) theta rnorm"""
-    return sqrt(2*sp.gamma*sp.kT)*wR(r)*theta(sp.dt)*r/norm(r)
-
-
-@jit(float64[:](float64[:], float64, float64, float64))
-def F_R(r, gamma, kT, dt):
-    """Random DPD force, F^R = -sigma wR(r) theta rnorm
-    * r: vector"""
-    return sqrt(2*gamma*kT)*wR(r)*theta(dt)*r/norm(r)
-    
-    
-@jit(float64[:](float64[:], float64[:], float64, float64, float64, float64))
-def F_tot(r, v, a, gamma, kT, dt):
+@jit(float64[:](float64[:], float64[:],\
+     float64, float64, float64, float64, float64), nopython=True)
+def F_tot(r, v, a, gamma, kT, dt, rc):
     """Total force between two particles"""
-    return F_C(r, a) + F_D(r, v) + F_R(r, gamma, kT, dt)
+    nr = norm_numba(r)
+    ftot = a*wR(r, rc) * r/nr + \
+           - gamma * wR(r, rc)**2 * dot_numba(r, v) * r/nr**2 + \
+           sqrt(2*gamma*kT) * wR(r, rc) * randn() / sqrt(dt) * r/nr
+    return ftot
 
 
-@jit(float64(float64[:, :], float64[:, :], int64[:], int64))
+@jit(float64(float64[:, :], float64[:, :], int64[:], float64), nopython=True)
 def tot_PE(pos_list, iparams, blist, rc):
     """ MAKE THIS MORE EFFICIENT """ # FINISH
     E = 0.0
-    N = pos_list.shape[0]
+    N = len(pos_list)
     for i in range(N):
         for j in range(i+1, N):
             E += iparams[blist[i], blist[j]]/2 *\
-                 (1 - norm(pos_list[i] - pos_list[j])/rc)**2
+                 (1 - norm_numba(pos_list[i] - pos_list[j])/rc)**2
     return E
 
 
-@jit(float64(float64[:, :]))
+@jit(float64(float64[:, :]), nopython=True)
 def tot_KE(vel_list):
     """Total kinetic energy of the system,
     same mass assumed"""
-    return np.sum(vel_list * vel_list) / 2
+#    return np.sum(vel_list * vel_list) / 2
+    N = len(vel_list)
+    KE = 0.0
+    for i in range(len(vel_list)):
+        for j in range(3):
+            KE += (vel_list[i, j]*vel_list[i, j]) / 2.0
+    return KE
+
+
+@jit(float64(float64[:, :]), nopython=True)
+def temperature(vel_list):
+    Ndof = len(vel_list) - 6  # Number of degrees of freedom, NOT SURE, FIX!
+    return tot_KE(vel_list)/(3./2*Ndof)
 
 
 @jit(float64[:, :](float64, float64[:, :], int64[:], float64, float64, int64))
-def init_pos(N, iparams, blist, L, rc, seed=1234):
+def init_pos(N, iparams, blist, L, rc, seed):
     np.random.seed(seed)
-    pos_list = np.random.rand(N, 3) * L
+    pos_list = rand(N, 3) * L
     return pos_list
 
 
 @jit(float64[:, :](float64, float64))
 def init_vel(N, kT):
     """Initialise velocities"""
-    return np.random.randn(N, 3) * kT
-
-
-@jit(float64(float64[:, :]))
-def temperature(vel_list):
-    Ndof = len(vel_list)-6  # Number of degrees of freedom, NOT SURE, FIX!
-    return tot_KE(vel_list)/(3./2*Ndof)
+    return randn(N, 3) * kT
 
 
 @jit(float64[:, :](float64[:, :], float64[:, :], float64[:, :], int64[:], \
-     float64, float64, float64, float64))
-def force_list(pos_list, vel_list, iparams, blist, L, gamma=4.5, kT=1.0, dt=0.02):
+     float64, float64, float64, float64, float64))
+def force_list(pos_list, vel_list, iparams, blist, L, gamma, kT, dt, rc):
     """Force matrix. Input:
     * pos_list: (N, 3) xyz matrix
     * vel_list: (N, 3) velocity matrix
@@ -108,7 +114,7 @@ def force_list(pos_list, vel_list, iparams, blist, L, gamma=4.5, kT=1.0, dt=0.02
             dr_n = np.dot(cell, G_n)
             v_ij = vel_list[i] - vel_list[j]     # vij = vi - vj
             force_mat[i, j, :] = \
-                F_tot(dr_n, v_ij, iparams[blist[i], blist[j]], gamma, kT, dt)
+                F_tot(dr_n, v_ij, iparams[blist[i], blist[j]], gamma, kT, dt, rc)
 
     force_mat -= np.transpose(force_mat, (1, 0, 2))
     return np.sum(force_mat, axis=1)
@@ -120,10 +126,10 @@ def vel_verlet_step(pos_list, vel_list, iparams, blist, sp):
     * vel_list: (N, 3) matrix
     * number of passes through the walls"""
     F1 = force_list(pos_list, vel_list, iparams, blist, \
-                    sp.L, sp.gamma, sp.kT, sp.dt)
+                    sp.L, sp.gamma, sp.kT, sp.dt, sp.rc)
     pos_list2 = pos_list + vel_list*sp.dt + F1 * sp.dt**2 / 2
     F2 = force_list(pos_list2, vel_list, iparams, blist, \
-                    sp.L, sp.gamma, sp.kT, sp.dt)
+                    sp.L, sp.gamma, sp.kT, sp.dt, sp.rc)
     vel_list2 = vel_list + (F1 + F2) * sp.dt / 2
     Npass = np.sum(pos_list2 - pos_list2 % sp.L != 0, axis=1)
     pos_list2 = pos_list2 % sp.L
@@ -143,13 +149,15 @@ def integrate(pos_list, vel_list, iparams, blist, sp):
     """
     T, E = np.zeros(sp.Nt), np.zeros(sp.Nt)
 
+    ti = time.time()
     # 1st Verlet step
-    F = force_list(pos_list, vel_list, iparams, blist, sp.L, sp.gamma, sp.kT, sp.dt)
+    F = force_list(pos_list, vel_list, iparams, blist, sp.L, sp.gamma, sp.kT, sp.dt, sp. rc)
     pos_list = pos_list + vel_list * sp.dt + F * sp.dt**2 / 2
     T[0] = temperature(vel_list)
     if sp.saveE:
         E[0] = tot_KE(vel_list) + tot_PE(pos_list, iparams, blist, rc)
     save_xyzmatrix("Dump/dump_%i.xyz" % 0, blist, pos_list)
+    print("Step: %i | T: %.2f | Time: %.2f" % (1, T[0], time.time()-ti))
 
     # Other steps
     for i in range(1, sp.Nt):
@@ -159,7 +167,7 @@ def integrate(pos_list, vel_list, iparams, blist, sp):
         T[i] = temperature(vel_list)
         if (i+1) % sp.thermo == 0:
             save_xyzmatrix("Dump/dump_%i.xyz" % (i+1), blist, pos_list)
-            print("Step: %i, Temperature: %f" % (i+1, T[i]))
+            print("Step: %i | T: %.2f | Time: %.2f" % (i+1, T[i], time.time()-ti))
     return T, E
 
 
