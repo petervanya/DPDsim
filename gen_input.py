@@ -2,6 +2,7 @@
 """Usage:
     gen_input.py [--L <L> --dt <dt> --steps <N> --kT <kT> --thermo <th>]
                  [--NA <NA> --NB <NB> --aii <aii> --aij <aij>]
+                 [--int <int>]
 
 Generate input for the simulation.
 
@@ -14,7 +15,8 @@ Options:
     --NB <NB>      Number of B beads [default: 200]
     --aii <aii>    Same bead interaction [default: 25]
     --aij <aij>    Different beads interaction [default: 40]
-    --thermo <th>  How often write into file [default: 5]
+    --thermo <th>  How often write into file [default: 1]
+    --int <int>    Choose method, Euler or Verlet [default: Euler]
 
 24/06/16
 """
@@ -34,6 +36,7 @@ aii = float(args["--aii"])
 aij = float(args["--aij"])
 saveE = False
 use_numba = False
+method = args["--int"]
 
 
 s = "# Input file for home-made DPD simulation\n"
@@ -54,7 +57,8 @@ s += "    A A: %.1f\n" % aii
 s += "    A B: %.1f\n" % aij
 s += "    B B: %.1f\n" % aii
 s += "save-energy: %r\n" % saveE
-s += "use-numba: %r\n" % use_numba
+s += "integrate:   %s\n" % method
+s += "use-numba:   %r\n" % use_numba
 
 open("input.yaml", "w").write(s)
 print("File written in input.yaml")
