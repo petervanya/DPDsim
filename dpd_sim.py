@@ -50,7 +50,8 @@ if __name__ == "__main__":
     sp = mydict(L=data["L"], dt=data["dt"], Nt=data["num-steps"],\
                 kT=data["kT"], gamma=data["gamma"], rc=data["rc"],\
                 Nbt=Nbt, thermo=data["thermo"], seed=seed, \
-                saveE=data["save-energy"], use_numba=data["use-numba"])
+                saveE=data["save-energy"], use_numba=data["use-numba"],\
+                method=data["integrate"])
 
     print(" ============== \n DPD simulation \n ==============")
     print("Beads: %i | rho: %.2f | kT: %.1f | Steps: %i | dt: %.4f | thermo: %i"
@@ -63,31 +64,46 @@ if __name__ == "__main__":
     if sp.use_numba == True:
         print("Using Numba.")
         # Is this kosher?
-        from dpd_functions_numba import init_pos, init_vel, integrate, temperature
+        from dpd_functions_numba import init_pos, init_vel, temperature, \
+                integrate_verlet, integrate_euler
 
         print("Initialising the system...")
-        pos_list = init_pos(N, sp.L, sp.seed)
-        vel_list = init_vel(N, sp.kT)
-        print("Temperature: %.2f" % temperature(vel_list))
+        X = init_pos(N, sp.L, sp.seed)
+        V = init_vel(N, sp.kT)
+        print("Temperature: %.2f" % temperature(V))
  
         print("Starting integration...")
-        ti = time.time()
-        T, E = integrate(pos_list, vel_list, int_params, bead_list, sp)
-        tf = time.time()
-        print("Simulation time: %.2f s." % (tf-ti))
+#        ti = time.time()
+#        T, E = integrate(X, V, int_params, bead_list, sp)
+#        tf = time.time()
+        if sp.method == "Euler":
+            ti = time.time()
+            T, E = integrate_euler(X, V, int_params, bead_list, sp)
+            tf = time.time()
+        if sp.method == "Verlet":
+            ti = time.time()
+            T, E = integrate_verlet(X, V, int_params, bead_list, sp)
+            tf = time.time()
+        print("Simulation time: %.2f s." % (tf - ti))
         
     else:
-        # Is this kosher?
-        from dpd_functions import init_pos, init_vel, integrate, temperature
+        # IS THIS KOSHER?
+        from dpd_functions import init_pos, init_vel, temperature, \
+                integrate_verlet, integrate_euler
         print("Initialising the system...")
-        pos_list = init_pos(N, sp.L, sp.seed)
-        vel_list = init_vel(N, sp.kT)
-        print("Temperature: %.2f" % temperature(vel_list))
+        X = init_pos(N, sp.L, sp.seed)
+        V = init_vel(N, sp.kT)
+        print("Temperature: %.2f" % temperature(V))
  
         print("Starting integration...")
-        ti = time.time()
-        T, E = integrate(pos_list, vel_list, int_params, bead_list, sp)
-        tf = time.time()
-        print("Simulation time: %.2f s." % (tf-ti))
+        if sp.method == "Euler":
+            ti = time.time()
+            T, E = integrate_euler(X, V, int_params, bead_list, sp)
+            tf = time.time()
+        if sp.method == "Verlet":
+            ti = time.time()
+            T, E = integrate_verlet(X, V, int_params, bead_list, sp)
+            tf = time.time()
+        print("Simulation time: %.2f s." % (tf - ti))
 
 
