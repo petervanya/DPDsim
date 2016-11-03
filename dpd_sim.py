@@ -53,7 +53,7 @@ if __name__ == "__main__":
                 saveE=data["save-energy"], use_numba=data["use-numba"])
 
     print(" ============== \n DPD simulation \n ==============")
-    print("Beads: %i | rho: %.2f | kT: %.1f | Steps: %i | dt: %.2f | thermo: %i"
+    print("Beads: %i | rho: %.2f | kT: %.1f | Steps: %i | dt: %.4f | thermo: %i"
           % (N, rho, sp.kT, sp.Nt, sp.dt, sp.thermo))
 
     dumpdir = "Dump"
@@ -66,7 +66,7 @@ if __name__ == "__main__":
         from dpd_functions_numba import init_pos, init_vel, integrate, temperature
 
         print("Initialising the system...")
-        pos_list = init_pos(N, int_params, bead_list, sp.L, sp.rc, sp.seed)
+        pos_list = init_pos(N, sp.L, sp.seed)
         vel_list = init_vel(N, sp.kT)
         print("Temperature: %.2f" % temperature(vel_list))
  
@@ -80,7 +80,7 @@ if __name__ == "__main__":
         # Is this kosher?
         from dpd_functions import init_pos, init_vel, integrate, temperature
         print("Initialising the system...")
-        pos_list, E = init_pos(N, int_params, bead_list, sp)
+        pos_list = init_pos(N, sp.L, sp.seed)
         vel_list = init_vel(N, sp.kT)
         print("Temperature: %.2f" % temperature(vel_list))
  

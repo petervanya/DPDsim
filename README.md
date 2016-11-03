@@ -5,7 +5,10 @@ Dissipative particle dynamics simulation of non-bonded particles.
 Based on [http://dx.doi.org/10.1063/1.474784](Groot-Warren, JCP, 1997).
 
 ### Run
-`./dpd_sim input.yaml`
+```
+./gen_input.py
+./dpd_sim input.yaml
+```
 
 ### Requirements
 * Python3
