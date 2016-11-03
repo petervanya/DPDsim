@@ -62,11 +62,10 @@ def tot_KE(vel_list):
     return np.sum(vel_list * vel_list) / 2
 
 
-def init_pos(N, iparams, blist, sp):
-    np.random.seed(sp.seed)
-    pos_list = np.random.rand(N, 3) * sp.L
-    E = tot_PE(pos_list, iparams, blist, sp)
-    return pos_list, E
+def init_pos(N, L, seed=1234):
+    np.random.seed(seed)
+    pos_list = np.random.rand(N, 3) * L
+    return pos_list
 
 
 def init_vel(N, kT):
@@ -84,7 +83,7 @@ def force_list(pos_list, vel_list, iparams, blist, sp):
     * pos_list: (N, 3) xyz matrix
     * iparams: (Nbt, Nbt) matrix with interaction params
     * blist: list of bead types"""
-    N = pos_list.shape[0]
+    N = len(pos_list)
     force_mat = np.zeros((N, N, 3))
     cell = sp.L*np.eye(3)
     inv_cell = np.linalg.pinv(cell)
@@ -149,4 +148,44 @@ def integrate(pos_list, vel_list, iparams, blist, sp):
             print("Step: %i | T: %.2f | Time: %.2f" % (i+1, T[i], time.time()-ti))
     return T, E
 
+
+# ===== code with lookup tables
+def build_lookup_table(pos_list, L, cutoff=2.0, page=150):  # fix page
+    """Create a dict for each bead storing positions of 
+    neighbouring beads within given cutoff"""
+    N = len(pos_list)
+    lt = dict()
+#    lt = -1 * np.ones(N, page)
+    for i in range(N): lt[i] = []
+    cell = L*np.eye(3)
+    inv_cell = np.linalg.pinv(cell)
+    for i in range(N):
+        for j in range(i):
+            dr = pos_list[i] - pos_list[j]
+            G = np.dot(inv_cell, dr)
+            G_n = G - np.round(G)
+            dr_n = np.dot(cell, G_n)
+            if norm(dr_n) < cutoff:
+                lt[i].append(j)
+                lt[j].append(i)
+    return lt
+
+
+def force_list_lookup(pos_list, vel_list, lt, iparams, blist, sp):
+    """Get force matrix from lookup table"""
+    N = len(pos_list)
+    force_mat = np.zeros((N, N, 3))
+    cell = sp.L*np.eye(3)
+    inv_cell = np.linalg.pinv(cell)
+    for i in range(N):
+        dr = pos_list[i] - pos_list[j]       # rij = ri - rj
+        G = np.dot(inv_cell, dr)
+        G_n = G - np.round(G)
+        dr_n = np.dot(cell, G_n)
+        v_ij = vel_list[i] - vel_list[j]     # vij = vi - vj
+        force_mat[i, j] = F_tot(dr_n, v_ij, iparams[(blist[i], blist[j])], sp)
+
+    force_mat -= np.transpose(force_mat, (1, 0, 2))
+    return np.sum(force_mat, axis=1)
+    
 
