@@ -66,28 +66,19 @@ if __name__ == "__main__":
         # Is this kosher?
         from dpd_functions_numba import init_pos, init_vel, temperature, \
                 integrate_verlet, integrate_euler
-
         print("Initialising the system...")
         X = init_pos(N, sp.L, sp.seed)
         V = init_vel(N, sp.kT)
         print("Temperature: %.2f" % temperature(V))
  
-        print("Starting integration...")
-#        ti = time.time()
-#        T, E = integrate(X, V, int_params, bead_list, sp)
-#        tf = time.time()
+        print("%s Method. Starting integration..." % sp.method)
+        ti = time.time()
         if sp.method == "Euler":
-            ti = time.time()
             T, E = integrate_euler(X, V, int_params, bead_list, sp)
-            tf = time.time()
         if sp.method == "Verlet":
-            ti = time.time()
             T, E = integrate_verlet(X, V, int_params, bead_list, sp)
-            tf = time.time()
-        print("Simulation time: %.2f s." % (tf - ti))
         
     else:
-        # IS THIS KOSHER?
         from dpd_functions import init_pos, init_vel, temperature, \
                 integrate_verlet, integrate_euler
         print("Initialising the system...")
@@ -95,15 +86,14 @@ if __name__ == "__main__":
         V = init_vel(N, sp.kT)
         print("Temperature: %.2f" % temperature(V))
  
-        print("Starting integration...")
+        print("%s Method. Starting integration..." % sp.method)
+        ti = time.time()
         if sp.method == "Euler":
-            ti = time.time()
             T, E = integrate_euler(X, V, int_params, bead_list, sp)
-            tf = time.time()
         if sp.method == "Verlet":
-            ti = time.time()
             T, E = integrate_verlet(X, V, int_params, bead_list, sp)
-            tf = time.time()
-        print("Simulation time: %.2f s." % (tf - ti))
+    tf = time.time()
+    print("Simulation time: %.2f s." % (tf - ti))
+    print("Relative energy difference: %.3e." % ((E[-1] - E[0]) / E[0]))
 
 
