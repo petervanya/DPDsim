@@ -100,53 +100,18 @@ def force_list(X, V, iparams, blist, sp):
     return np.sum(force_mat, axis=1)
 
 
-def vel_verlet_step(X, V, iparams, blist, sp):
-    """The velocity Verlet algorithm. Retur:
-    * position matrix
-    * velocity matrix
-    * number of passes through the walls"""
-    F = force_list(X, V, iparams, blist, sp)
-    X2 = X + V*sp.dt + F*sp.dt**2 / 2
-    F2 = force_list(X2, V, iparams, blist, sp)  # CHECK CORRECTNESS of V
-    V2 = V + (F + F2) * sp.dt / 2
-    Npass = np.sum(X2 - X2 % sp.L != 0, axis=1)
-    X2 = X2 % sp.L
-    return X2, V2, Npass
-
-
-def integrate_verlet(X, V, iparams, blist, sp):
-    """
-    Verlet integration for Nt steps.
-    Save each thermo-multiple step into xyz_frames.
-    Mass set to 1.0. Input:
-    * X: (N, 3) matrix
-    * V: (N, 3) matrix
-    * iparams: (Nbt, Nbt) matrix with interaction params
-    * blist: list of bead types (bead list)
-    * sp: misc system params
-    """
-    T, E = np.zeros(sp.Nt), np.zeros(sp.Nt)
-    ti = time.time()
-
-    # 1st Verlet step
-    F = force_list(X, V, iparams, blist, sp)
-    X = X + V * sp.dt + F * sp.dt**2 / 2
-    T[0] = temperature(V)
-    E[0] = tot_KE(V) + tot_PE(X, iparams, blist, sp)
-    save_xyzmatrix("Dump/dump_%i.xyz" % 0, blist, X)
-    tf = time.time()
-    print("Step: %i | T: %.5f | Time: %.2f" % (1, T[0], tf - ti))
-
-    # Other steps
-    for i in range(1, sp.Nt):
-        X, V, Npass = vel_verlet_step(X, V, iparams, blist, sp)
-        E[i] = tot_KE(V) + tot_PE(X, iparams, blist, sp)
-        T[i] = temperature(V)
-        tf = time.time()
-        if (i+1) % sp.thermo == 0:
-            save_xyzmatrix("Dump/dump_%i.xyz" % (i+1), blist, X)
-            print("Step: %i | T: %.5f | Time: %.2f" % (i+1, T[i], tf - ti))
-    return T, E
+#def vel_verlet_step(X, V, iparams, blist, sp):
+#    """The velocity Verlet algorithm. Retur:
+#    * position matrix
+#    * velocity matrix
+#    * number of passes through the walls"""
+#    F = force_list(X, V, iparams, blist, sp)
+#    X2 = X + V*sp.dt + F*sp.dt**2 / 2
+#    F2 = force_list(X2, V, iparams, blist, sp)  # CHECK CORRECTNESS of V
+#    V2 = V + (F + F2) * sp.dt / 2
+#    Npass = np.sum(X2 - X2 % sp.L != 0, axis=1)
+#    X2 = X2 % sp.L
+#    return X2, V2, Npass
 
 
 def integrate_euler(X, V, iparams, blist, sp):
@@ -161,20 +126,64 @@ def integrate_euler(X, V, iparams, blist, sp):
     * sp: system params
     """
     T, E = np.zeros(sp.Nt), np.zeros(sp.Nt)
+    F = np.zeros(X.shape)
+    N = len(X)
     ti = time.time()
     
     for i in range(sp.Nt):
-        F = force_list(X, V, iparams, blist, sp)
-        V = V + F * sp.dt
         X = X + V * sp.dt
-        Npass = np.sum(X - X % sp.L != 0, 1)
+        V = V + F * sp.dt
+        F = force_list(X, V, iparams, blist, sp)
+
         X = X % sp.L
+        KE = tot_KE(V)
+        E[i] = KE + tot_PE(X, iparams, blist, sp.rc)
+        T[i] = KE / (3.0 / 2.0 * N)
+        tf = time.time()
+        if (i+1) % sp.thermo == 0:
+            save_xyzmatrix("Dump/dump_%3i.xyz" % (i+1), blist, X)
+            print("Step: %i | t: %.4f | T: %.5f | E: %.3e | Time: %.2f" % \
+                (i+1, i * sp.dt, T[i], E[i], tf - ti))
+    return T, E
+
+
+def integrate_verlet(X, V, iparams, blist, sp):
+    """
+    Verlet integration for Nt steps.
+    Save each thermo-multiple step into xyz_frames.
+    Mass set to 1.0. Input:
+    * X: (N, 3) matrix
+    * V: (N, 3) matrix
+    * iparams: (Nbt, Nbt) matrix with interaction params
+    * blist: list of bead types (bead list)
+    * sp: misc system params
+    """
+    T, E = np.zeros(sp.Nt), np.zeros(sp.Nt)
+    Vtemp = np.zeros(X.shape)
+    Fnew = np.zeros(X.shape)
+    ti = time.time()
+
+    F = force_list(X, V, iparams, blist, sp)
+    T[0] = temperature(V)
+    E[0] = tot_KE(V) + tot_PE(X, iparams, blist, sp)
+    save_xyzmatrix("Dump/dump_%i.xyz" % 0, blist, X)
+    tf = time.time()
+
+    for i in range(1, sp.Nt):
+        X = X + V * sp.dt + F * sp.dt**2 / 2.0
+        Fnew = force_list(X, V, iparams, blist, sp)
+        V = V + (F + Fnew) * sp.dt / 2.0
+        F = Fnew
+
+        X = X % L
+
         T[i] = temperature(V)
         E[i] = tot_KE(V) + tot_PE(X, iparams, blist, sp)
         tf = time.time()
         if (i+1) % sp.thermo == 0:
             save_xyzmatrix("Dump/dump_%3i.xyz" % (i+1), blist, X)
-            print("Step: %i | T: %.5f | Time: %.2f" % (i+1, T[i], tf - ti))
+            print("Step: %i | t: %.4f | T: %.5f | E: %.3e | Time: %.2f" % \
+                (i+1, i * dt, T[i], E[i], tf - ti))
     return T, E
 
 
