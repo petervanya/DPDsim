@@ -3,3 +3,9 @@
 *.out
 input.yaml
 Dump/
+test_stuff.py
+Julia/Dump/
+Julia/data.out
+Julia/CONFIG
+Julia/CONFIG_start.xyz
+
