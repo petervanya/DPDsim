@@ -2,7 +2,6 @@
 """
 Collection of input/output functions.
 """
-module dpd_io
 
 function write_xyz(fname, bl, xyz)
     """Input:
@@ -69,4 +68,3 @@ function read_config(fname)
 end
 
 
-end
