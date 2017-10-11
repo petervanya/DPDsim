@@ -1,8 +1,7 @@
 #!/usr/bin/julia
 module dpd_functions
-"""
-Functions to evolve a DPD simulation.
-"""
+include("dpd_io.jl")
+
 function wR(r, rc=1.0)
     nr = norm(r)
     wr = 0.0
@@ -13,7 +12,7 @@ function wR(r, rc=1.0)
 end
 
 
-function tot_PE(X, A, bl, L, rc)
+function tot_PE(X, A, bl, L, rc=1.0)
     N = size(X, 1)
     box = L * eye(3)
     inv_box = pinv(box)
@@ -27,7 +26,10 @@ function tot_PE(X, A, bl, L, rc)
             g = inv_box * dr
             gn = g - round(g)
             drn = box * gn
-            E += A[bl[i], bl[j]] * rc / 2 * (1 - norm(drn) / rc)^2
+            nr = norm(drn)
+            if nr < rc
+                E += A[bl[i], bl[j]] * rc / 2 * (1 - nr / rc)^2
+            end
         end
     end
     E
@@ -78,7 +80,7 @@ function force_mat(X, V, A, bl, L, gamma, kT, dt, rc)
 
     for i in 1:N
         for j in 1:i-1
-            dr = X[i, :] - X[j, :]
+            dr = X[j, :] - X[i, :]   # previously X[i, :] - X[j, :], WRONG
             g = inv_box * dr
             gn = g - round(g)
             drn = box * gn
@@ -110,6 +112,7 @@ function integrate_euler(X, V, A, bl, L, gamma, kT, dt, rc, Nt, thermo)
         tf = time()
         if i % thermo == 0
             writedlm("Dump/dump_$(i).xyz", [bl X])   # rewrite
+#            write_xyz("Dump/dump_$(i).xyz", bl, X)
             @printf "Step %i | t: %.3f | T: %.3f | PE: %.3e | Time: %.2f\n" i  i * dt  T[i]  PE[i]  tf - ti
         end
     end
@@ -122,29 +125,35 @@ function integrate_verlet(X, V, A, bl, L, gamma, kT, dt, rc, Nt, thermo)
     T = zeros(Nt+1)
     KE = zeros(Nt+1)
     PE = zeros(Nt+1)
-    Vtemp = zeros(size(X))
     Fnew = zeros(size(X))
 
     F = force_mat(X, V, A, bl, L, gamma, kT, dt, rc)
-    KE = tot_KE(V)
-    T[1] = KE / (3.0 * N / 2)
+    KE[1] = tot_KE(V)
+    T[1] = KE[1] / (3.0 * N / 2)
     PE[1] = tot_PE(X, A, bl, L, rc)
-    writedlm("Dump/dump_0.xyz", [bl X])   # rewrite
-    println(size(bl), ", ", size(X), size(V), size(F))
+#    writedlm("Dump/dump_1.xyz", [bl X])   # rewrite
+    write_xyz("Dump/dump_1.xyz", bl, X)
 
     ti = time()
     for i in 2:Nt+1
-        X = X + V * dt + F * dt^2 / 2.0
+        X = X + V * dt + 0.5 * F * dt^2
         Fnew = force_mat(X, V, A, bl, L, gamma, kT, dt, rc)
-        V = V + (F + Fnew) * dt / 2.0
+        V = V + 0.5 * (F + Fnew) * dt
         F = Fnew
-        X = X % L
+
+#        Vnew = V + F * dt / 2
+#        X = X + Vnew * dt
+#        F = force_mat(X, Vnew, A, bl, L, gamma, kT, dt, rc)
+#        V = Vnew + F * dt / 2
+
+        X = mod(X, L)
         KE[i] = tot_KE(V)
         PE[i] = tot_PE(X, A, bl, L, rc)
         T[i] = KE[i] / (3 * N / 2)
         tf = time()
         if i % thermo == 0
-            writedlm("Dump/dump_$(i).xyz", [bl X])   # rewrite
+#            writedlm("Dump/dump_$(i).xyz", [bl X])   # rewrite
+            write_xyz("Dump/dump_$(i).xyz", bl, X)
             @printf "Step: %i | t: %.3f | T: %.3f | PE: %.3e | Time: %.2f\n" i  i * dt  T[i]  PE[i]  tf - ti
         end
     end
