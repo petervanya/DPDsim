@@ -7,7 +7,7 @@ Options:
     --N <N>            Number of atoms [default: 500]
     --L <L>            Box size [default: 5]
     --steps <ns>       Number of steps [default: 300]
-    --dt <dt>          Timestep [default: 0.1]
+    --dt <dt>          Timestep [default: 0.01]
     --thermo <th>      Frequency of printing to screen and file [default: 10]
     --gamma <g>        Friction [default: 0.0]
     --read <xyz>       Read the xyz file
@@ -20,10 +20,9 @@ include("dpd_functions.jl")
 include("dpd_io.jl")
 using dpd_functions.init_pos, dpd_functions.init_vel,
     dpd_functions.integrate_verlet, dpd_functions.integrate_euler
-using dpd_io.read_config, dpd_io.read_xyz
 
 args = docopt(doc)
-for (k, v) in args; println(k, "  ", v); end
+#for (k, v) in args; println(k, "  ", v); end
 L = parse(Float64, args["--L"])
 N = parse(Int, args["--N"])
 dt = parse(Float64, args["--dt"])
@@ -38,10 +37,11 @@ seed = 1234
 srand(seed)
 
 @printf "===== DPD simulations =====\n"
-@printf "Beads: %i | Box: %.2f | rho: %.2f\n" N L rho
+@printf "Beads: %i | Box: %.2f | rho: %.2f | gamma: %.1f\n" N L rho gamma
 @printf "Steps: %i | dt: %.3f | thermo: %i\n" Ns dt thermo
 
 A = 25.0 * ones(2, 2)
+
 if args["--read"] != nothing
     fname = args["--read"]
     println("Reading initial xyz from $fname...")
@@ -63,11 +63,11 @@ else
 end
 
 ti = time()
-T, KE, PE = integrate_euler(X, V, A, blist, L, gamma, kT, dt, rc, Ns, thermo)
-#T, KE, PE = integrate_verlet(X, V, A, blist, L, gamma, kT, dt, rc, Ns, thermo)
+#T, KE, PE = integrate_euler(X, V, A, blist, L, gamma, kT, dt, rc, Ns, thermo)
+T, KE, PE = integrate_verlet(X, V, A, blist, L, gamma, kT, dt, rc, Ns, thermo)
 tf = time()
 
 println("Simulation finished.Time: $(tf - ti) s.")
-#writedlm("data.out", [1:Ns+1 T KE PE])
+writedlm("data.out", [1:Ns+1 T KE PE])
 
 
