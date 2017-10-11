@@ -8,4 +8,6 @@ Julia/Dump/
 Julia/data.out
 Julia/CONFIG
 Julia/CONFIG_start.xyz
-
+Julia/test.jl
+Julia/fff.jl
+Test_dlms/
