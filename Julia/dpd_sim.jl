@@ -65,9 +65,8 @@ end
 ti = time()
 #T, KE, PE = integrate_euler(X, V, A, blist, L, gamma, kT, dt, rc, Ns, thermo)
 T, KE, PE = integrate_verlet(X, V, A, blist, L, gamma, kT, dt, rc, Ns, thermo)
-tf = time()
 
-println("Simulation finished.Time: $(tf - ti) s.")
+println("Simulation finished.Time: $(time() - ti) s.")
 writedlm("data.out", [1:Ns+1 T KE PE])
 
 
