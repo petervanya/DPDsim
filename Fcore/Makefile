@@ -3,15 +3,19 @@
 F2PY = f2py
 FVENDOR = gnu95
 FC = gfortran
+FLAGS = -g -fcheck=all -Wall -Wunused
 
 
 all: main
+
+run: all
+	./main
 
 main: dpd_io.o dpd_f.o main.o
 	${FC} -o $@ $^
 
 %.o: %.f90
-	${FC} -c $<
+	${FC} ${FLAGS} -c $<
 
 f2py: dpd_f.f90
 	${F2PY} -c $< --fcompiler=${FVENDOR} -m $@
