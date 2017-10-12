@@ -16,3 +16,5 @@ Fcore/*.o
 Fcore/*.so
 Fcore/Test/
 Fcore/main
+Fcore/CONFIG.xyz
+Fcore/CONFIG.vel
