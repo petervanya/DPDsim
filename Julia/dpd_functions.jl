@@ -120,7 +120,6 @@ function integrate_verlet(X, V, A, bl, L, gamma, kT, dt, rc, Nt, thermo)
     PE = zeros(Nt+1)
     Fnew = zeros(size(X))
 
-    F = force_mat(X, V, A, bl, L, gamma, kT, dt, rc)
     writedlm("init_force.out", F)
     KE[1] = tot_KE(V)
     T[1] = KE[1] / (3.0 * N / 2)
@@ -129,6 +128,7 @@ function integrate_verlet(X, V, A, bl, L, gamma, kT, dt, rc, Nt, thermo)
     @printf "Initial data | KE: %.6e | PE: %.6e\n" KE[1] PE[1]
 
     ti = time()
+    F = force_mat(X, V, A, bl, L, gamma, kT, dt, rc)
     for i in 2:Nt+1
         X = X + V * dt + 0.5 * F * dt^2
         Fnew = force_mat(X, V, A, bl, L, gamma, kT, dt, rc)
