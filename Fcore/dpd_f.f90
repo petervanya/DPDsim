@@ -143,6 +143,35 @@ function init_vel(N, kT) result(V)
 end function
 
 
+subroutine euler_step(X, V, ip, bl, box, gama, kT, dt)
+    real(8), intent(inout) :: X(:, :), V(:, :)
+    real(8), intent(in) :: ip(:, :), box(3, 3)
+    integer, intent(in) :: bl(:)
+    real(8), intent(in) :: gama, kT, dt
+    real(8) :: F(size(X, 1), 3)
+    F = 0.0
+
+    F = force_mat(X, V, ip, bl, box, gama, kT, dt)
+    V(:, :) = V(:, :) + F(:, :) * dt
+    X(:, :) = X(:, :) + V(:, :) * dt
+end subroutine
+
+
+subroutine verlet_step(X, V, F, ip, bl, box, gama, kT, dt)
+    real(8), intent(inout) :: X(:, :), V(:, :), F(:, :)
+    real(8), intent(in) :: ip(:, :), box(3, 3)
+    integer, intent(in) :: bl(:)
+    real(8), intent(in) :: gama, kT, dt
+    real(8) :: V2(size(X, 1), 3)
+    V2 = 0.0
+
+    V2(:, :) = V(:, :) + 0.5 * F(:, :) * dt
+    X(:, :) = X(:, :) + V2(:, :) * dt
+    F = force_mat(X, V2, ip, bl, box, gama, kT, dt)
+    V(:, :) = V2(:, :) + 0.5 * F(:, :) * dt
+end subroutine
+
+
 subroutine print_mat(A)
     real(8), intent(in) :: A(:, :)
     integer :: M, N, i

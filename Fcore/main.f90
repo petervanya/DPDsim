@@ -48,16 +48,16 @@ bl = 1
 !print *, "Velocities initialised."
 
 call cpu_time(ti)
-call integrate_euler(X, V, size(X, 1), ip, 1, bl, box, &
+call integrate(X, V, size(X, 1), ip, 1, bl, box, &
     gama, kT, dt, Nt, Neq, thermo, df, KE, PE)
 call cpu_time(tf)
 print '("Time: ", f6.3, " s.")', tf - ti
 end program
 
 
-subroutine integrate_euler(X, V, N, ip, Np, bl, box, &
+subroutine integrate(X, V, N, ip, Np, bl, box, &
         gama, kT, dt, Nt, Neq, thermo, df, KE, PE)
-    use dpd_f, only: tot_pe, tot_ke, force_mat
+    use dpd_f, only: tot_pe, tot_ke, force_mat, euler_step, verlet_step
     use dpd_io, only: write_xyz
     implicit none
     integer, intent(in) :: N, Np
@@ -67,20 +67,20 @@ subroutine integrate_euler(X, V, N, ip, Np, bl, box, &
     real(8), intent(inout) :: X(N, 3), V(N, 3)
     real(8), intent(out) :: KE(Nt+1), PE(Nt+1)
     real(8) :: T, F(size(X, 1), 3)
-    integer :: it, i, j, ou
+    integer :: it, i, j
     character(:), allocatable :: fname
     character(10) :: snum
     F = 0.0
 
     print '("dt: ",f5.3," | kT: ",f5.3," | gama:",f5.3)', dt, kT, gama
 
-    ou = 20
     F = force_mat(X, V, ip, bl, box, gama, kT, dt)
-    open(unit=ou, file="init_force.out", action="write")
-    do i = 1, N
-        write(ou, *) F(i, :)
-    enddo
-    close(ou)
+!    ou = 20
+!    open(unit=ou, file="init_force.out", action="write")
+!    do i = 1, N
+!        write(ou, *) F(i, :)
+!    enddo
+!    close(ou)
 
     KE(1) = tot_ke(V)
     PE(1) = tot_pe(X, ip, bl, box)
@@ -88,11 +88,9 @@ subroutine integrate_euler(X, V, N, ip, Np, bl, box, &
 
     print *, "Integrating..."
     do it = 2, Nt+1
-        F = force_mat(X, V, ip, bl, box, gama, kT, dt)
-        do i = 1, N
-            V(i, :) = V(i, :) + F(i, :) * dt
-            X(i, :) = X(i, :) + V(i, :) * dt
-        enddo
+!        call euler_step(X, V, ip, bl, box, gama, kT, dt)
+        call verlet_step(X, V, F, ip, bl, box, gama, kT, dt)
+
         do i = 1, N
             do j = 1, 3
                 X(i, j) = mod(X(i, j) + box(j, j), box(j, j))
