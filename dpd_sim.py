@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Usage:
     dpd_sim.py <method> [--L <L> --N <N> --dt <dt> --gamma <g>]
-               [--read <xyz> --steps <ns> --neq <neq> --thermo <th>]
+               [--read <xyz> --steps <ns> --eq <eq> --thermo <th>]
                [--dump-freq <df> --seed <s> --style <st>]
 
 Simulate a DPD binary mixture.
@@ -14,7 +14,7 @@ Options:
     --L <L>            Box size [default: 5]
     --dt <dt>          Timestep [default: 0.05]
     --steps <ns>       Number of steps [default: 100]
-    --neq <neq>        Equilibration steps [default: 90]
+    --eq <eq>          Equilibration steps [default: 90]
     --thermo <th>      Frequency of printing to screen [default: 10]
     --dump-freq <df>   Frequency of printing to file [default: 10]
     --gamma <g>        Friction [default: 4.5]
@@ -27,7 +27,7 @@ Options:
 import numpy as np
 import os, time
 from docopt import docopt
-from dpd_io import read_xyzfile, save_xyzfile, parse_box
+from dpd_io import read_xyzfile, parse_box
 
 
 if __name__ == "__main__":
@@ -40,7 +40,7 @@ if __name__ == "__main__":
     kT = 1.0
     dt = float(args["--dt"])
     Nt = int(args["--steps"])
-    Neq = int(args["--neq"])
+    Neq = int(args["--eq"])
     thermo = int(args["--thermo"])
     df = int(args["--dump-freq"])
     style = args["--style"]
