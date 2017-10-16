@@ -30,33 +30,6 @@ from docopt import docopt
 from dpd_io import read_xyzfile, save_xyzfile, parse_box
 
 
-def integrate_f(X, V, bl, ip, box, gama, kT, dt, \
-        Nt, Neq, thermo, df, style):
-    from Fdpd.dpd_f import dpd_f
-    F = dpd_f.force_mat(X, V, bl, ip, box, gama, kT, dt)
-    KE = np.zeros(Nt+1)
-    PE = np.zeros(Nt+1)
-    T = np.zeros(Nt+1)
-
-    F = dpd_f.force_mat(X, V, bl, ip, box, gama, kT, dt)
-    for it in range(2, Nt+1):
-        if style == "euler":
-            _ = dpd_f.euler_step(X, V, bl, ip, box, gama, kT, dt)
-        elif style == "verlet":
-            _ = dpd_f.verlet_step(X, V, F, bl, ip, box, gama, kT, dt)
-
-        X = X % np.diag(box)
-        KE[it] = dpd_f.tot_ke(V)
-        PE[it] = dpd_f.tot_pe(X, bl, ip, box)
-        T[it] = KE[it] / ((3 * N - 3) / 2.0)
-        if it % thermo == 0:
-            print("Step: %3.i | T: %.5f | KE: %.3e | PE: %.3e" % \
-                (it, T[it], KE[it], PE[it]))
-        if it >= Neq and it % df == 0:
-            save_xyzfile("Dump/dump_%05i.xyz" % it, bl, X)
-    return T, KE, PE
-
-
 if __name__ == "__main__":
     args = docopt(__doc__)
     np.random.seed(int(args["--seed"]))
@@ -80,7 +53,7 @@ if __name__ == "__main__":
 
     if args["--read"]:
         bl, X = read_xyzfile(args["--read"])
-        X = X % L
+        X = X % np.diag(box)
         Nbt = len(set(bl))
         ip = np.zeros((Nbt, Nbt))
         ip = 25.0
@@ -101,8 +74,11 @@ if __name__ == "__main__":
     ti = time.time()
     mt = args["<method>"].lower()
     if mt == "numba":
-        from dpd_functions import euler_step, verlet_step
+        from dpd_int import integrate_numba
+        T, KE, PE = integrate_numba(X, V, bl, ip, box, gamma, kT, dt, \
+                Nt, Neq, thermo, df, style=style)
     elif mt == "fortran":
+        from dpd_int import integrate_f
         X = np.asfortranarray(X)
         V = np.asfortranarray(V)
         T, KE, PE = integrate_f(X, V, bl, ip, box, gamma, kT, dt, \
