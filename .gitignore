@@ -11,10 +11,10 @@ Julia/CONFIG_start.xyz
 Julia/test.jl
 Julia/fff.jl
 Test_dlms/
-Fcore/*.mod
-Fcore/*.o
-Fcore/*.so
-Fcore/Test/
-Fcore/main
-Fcore/CONFIG.xyz
-Fcore/CONFIG.vel
+Fdpd/*.mod
+Fdpd/*.o
+Fdpd/*.so
+Fdpd/Test/
+Fdpd/main
+Fdpd/CONFIG.xyz
+Fdpd/CONFIG.vel
