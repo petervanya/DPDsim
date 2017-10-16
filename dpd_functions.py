@@ -6,224 +6,181 @@ A collection of functions for the DPD simulation.
 """
 import numpy as np
 from numpy import sqrt
+from numpy.random import rand, randn
 from numpy.linalg import norm
-from dpd_io import save_xyzmatrix
+from numba import jit, float64, int64
+from dpd_io import save_xyzfile
 import time
 
 
-def wR(r, rc=1.0):
-    """Weight function"""
-    return (1 - norm(r)/rc) if norm(r) < rc else 0.0
+@jit(float64(float64[:]), nopython=True)
+def norm_numba(r):
+    rn = 0.0
+    for ri in r:
+        rn += ri * ri
+    return sqrt(rn)
 
 
-def theta(dt):
-    return np.random.randn()/sqrt(dt)
-    
-
-def F_C(r, a=25.0):
-    """Conservative DPD force"""
-    return a*wR(r)*r/norm(r)
-    
-    
-def F_D(r, v, gamma=4.5):
-    """Dissipative DPD force, FD = -gamma wD(r) (rnorm*v) rnorm"""
-    return -gamma*wR(r)**2*np.dot(r, v)*r/norm(r)**2
-
-
-def F_R(r, sp):
-    """Random DPD force, F^R = -sigma wR(r) theta rnorm"""
-    return sqrt(2*sp.gamma*sp.kT)*wR(r)*theta(sp.dt)*r/norm(r)
-
-
-def F_tot(r, v, a, sp):
-    """Total force between two particles"""
-    return F_C(r, a) + F_D(r, v) + F_R(r, sp)
-
-
-def V_DPD(norm_r, inter_params, sp):
-    """Conservative potential energy between two beads"""
-    pass
-
-
-def tot_PE(X, iparams, blist, sp):
-    """ MAKE THIS MORE EFFICIENT """ # FINISH
-    E = 0.0
-    N = X.shape[0]
+@jit(float64[:](float64[:, :], float64[:]), nopython=True)
+def matvecmul(A, b):
+    N, M = A.shape
+    c = np.zeros(N)
     for i in range(N):
-        for j in range(i+1, N):
-            E += iparams[(blist[i], blist[j])] / 2 *\
-                 (1 - norm(X[i] - X[j]) / sp.rc)**2
+        for j in range(M):
+            c[i] += A[i, j] * b[j]
+    return c
+
+
+@jit(float64[:](float64[:]))
+def round_numba(g):
+    N = len(g)
+    gr = np.zeros(N)
+    for i in range(N):
+        gr[i] = g[i] - round(g[i])
+    return gr
+
+
+@jit(float64(float64[:], float64[:]), nopython=True)
+def dot_numba(r, v):
+    rv = 0.0
+    for i in range(len(r)):
+        rv += r[i] * v[i]
+    return rv
+
+
+@jit(float64(float64[:], float64), nopython=True)
+def wR(r, rc):
+    """Weight function, r>0 is mutual distance"""
+    nr = norm_numba(r)
+    return (1 - nr) if nr < 1.0 else 0.0
+
+
+@jit(float64[:](float64[:], float64[:],\
+     float64, float64, float64, float64, float64), nopython=True)
+def F_tot(r, v, a, gamma, kT, dt):
+    """Total force between two particles"""
+    nr = norm_numba(r)
+    ftot = a * wR(r) * r/nr \
+           - gamma * wR(r)**2 * dot_numba(r, v) * r / nr**2 \
+           + sqrt(2.0 * gamma * kT) * wR(r) * randn() / sqrt(dt) * r / nr
+    return ftot
+
+
+@jit(float64[:, :](float64[:, :], float64[:, :], int64[:], float64[:, :], \
+        float64[:, :], float64, float64, float64))#, nopython=True)
+def force_mat(X, V, bl, ip, box, gamma, kT, dt):
+    """Force matrix. Input:
+    * X: (N, 3) xyz matrix
+    * V: (N, 3) velocity matrix
+    * bl: (N) list of bead types
+    * ip: (Nbt, Nbt) matrix of interaction params
+    Output:
+    * (N, 3) force on each particle"""
+    N = len(X)
+    fmat = np.zeros((N, 3))
+    fcube = np.zeros((N, N, 3))
+    inv_box = pinv(box)
+    g = np.zeros(3)
+    rij = np.zeros(3)
+    vij = np.zeros(3)
+    for i in range(N):
+        for j in range(i):
+            rij = X[i] - X[j]
+            g = np.dot(inv_box, rij)
+            g = g - np.round(g)
+            rij = np.dot(box, g)
+            v_ij = V[i] - V[j]
+
+            fcube[i, j, :] = F_tot(rij, vij, ip[bl[i], bl[j]], gamma, kT, dt)
+            fcube[j, i, :] = -fcube[i, j, :]
+    fmat = np.sum(fcube, 2)
+    return fmat
+
+
+@jit(float64(float64[:, :], float64[:, :], int64[:], float64))#, nopython=True)
+def tot_PE(X, bl, ip, box):
+    N = len(X)
+    inv_box = pinv(box)
+    rij = np.zeros(3)
+    g = np.zeros(3)
+
+    E = 0.0
+    for i in range(N):
+        for j in range(i):
+            rij = X[i] - X[j]
+            g = inv_box @ rij
+            g = g - np.round(g)
+            rij = box @ g
+            E += ip[bl[i], bl[j]] * (1 - norm_numba(rij))**2 / 2.0
     return E
 
 
+@jit(float64(float64[:, :]), nopython=True)
 def tot_KE(V):
-    """Total kinetic energy of the system,
-    same mass assumed"""
-    return np.sum(V * V) / 2
+    KE = 0.0
+    for i in range(len(V)):
+        for j in range(3):
+            KE += V[i, j]**2 / 2.0
+    return KE
 
 
-def init_pos(N, L, seed=1234):
-    np.random.seed(seed)
-    X = np.random.rand(N, 3) * L
+def euler_step(X, V, bl, ip, box, gama, kT, dt):
+    F = np.zeros((N, 3))
+    F = force_mat(X, V2, bl, ip, box, gamma, kT, dt)
+    V += F * dt
+    X += V * dt
+    return X, V
+ 
+
+def verlet_step(X, V, F, bl, ip, box, gama, kT, dt):
+    V2 = np.zeros((N, 3))
+    V2 = V + 0.5 * F * dt
+    X += V2 * dt
+    F = force_mat(X, V2, bl, ip, box, gamma, kT, dt)
+    V = V2 + 0.5 * F * dt
+    return X, V, F
+
+
+def integrate(X, V, bl, ip, box, gamma, kT, dt,\
+        Nt, Neq, thermo, df, style="euler"):
+    N = len(X)
+    T = np.zeros(Nt+1)
+    KE = np.zeros(Nt+1)
+    PE = np.zeros(Nt+1)
+
+    ti = time.time()    
+    for i in range(2, Nt+1):
+        if style == "euler":
+            X, V = euler_step(X, V, bl, ip, box, gama, kT, dt)
+        elif style == "verlet":
+            X, V, F = verlet_step(X, V, F, bl, ip, box, gama, kT, dt)
+
+        X = X % np.diag(box)
+        KE[i] = tot_KE(V)
+        PE[i] = tot_PE(X, bl, ip, box)
+        T[i] = KE[i] / (3.0 / 2.0 * N)
+        if i % thermo == 0:
+            print("Step: %3.i | T: %.5f | KE: %.3e | PE: %.3e" % \
+                (i+1, T[i], KE[i], PE[i]))
+        if i >= Neq and i % df == 0:
+            save_xyzfile("Dump/dump_%i.xyz" % i, bl, X)
+    return T, KE, PE
+
+
+@jit(float64(float64[:, :]), nopython=True)
+def temperature(V):
+    return tot_KE(V) / ((3 * len(V) - 3) / 2.0)
+
+
+@jit(float64[:, :](int64, float64, int64))
+def init_pos(N, box):
+    X = rand(N, 3) * np.diag(box)
     return X
 
 
+@jit(float64[:, :](float64, float64))
 def init_vel(N, kT):
-    """Initialise velocities"""
-    return np.random.randn(N, 3) * kT
+    V = randn(N, 3) * kT
+    return V - np.sum(V, 0) / N
 
-
-def temperature(V):
-    Ndof = len(V) # -6  # Number of degrees of freedom, NOT SURE, FIX!
-    return tot_KE(V) / (3. / 2 * Ndof)
-
-
-def force_list(X, V, iparams, blist, sp):
-    """Force matrix. Input:
-    * X: (N, 3) xyz matrix
-    * iparams: (Nbt, Nbt) matrix with interaction params
-    * blist: list of bead types"""
-    N = len(X)
-    force_mat = np.zeros((N, N, 3))
-    cell = sp.L*np.eye(3)
-    inv_cell = np.linalg.pinv(cell)
-    for i in range(N):
-        for j in range(i):
-            dr = X[i] - X[j]       # rij = ri - rj
-            G = np.dot(inv_cell, dr)
-            G_n = G - np.round(G)
-            dr_n = np.dot(cell, G_n)
-            v_ij = V[i] - V[j]     # vij = vi - vj
-            force_mat[i, j] = F_tot(dr_n, v_ij, iparams[(blist[i], blist[j])], sp)
-
-    force_mat -= np.transpose(force_mat, (1, 0, 2))
-    return np.sum(force_mat, axis=1)
-
-
-#def vel_verlet_step(X, V, iparams, blist, sp):
-#    """The velocity Verlet algorithm. Retur:
-#    * position matrix
-#    * velocity matrix
-#    * number of passes through the walls"""
-#    F = force_list(X, V, iparams, blist, sp)
-#    X2 = X + V*sp.dt + F*sp.dt**2 / 2
-#    F2 = force_list(X2, V, iparams, blist, sp)  # CHECK CORRECTNESS of V
-#    V2 = V + (F + F2) * sp.dt / 2
-#    Npass = np.sum(X2 - X2 % sp.L != 0, axis=1)
-#    X2 = X2 % sp.L
-#    return X2, V2, Npass
-
-
-def integrate_euler(X, V, iparams, blist, sp):
-    """
-    Euler integration for Nt steps.
-    Save each thermo-multiple step into xyz_frames.
-    Mass set to 1.0. Input:
-    * X: (N, 3) matrix
-    * V: (N, 3) matrix
-    * iparams: dict mapping bead type to a_ij
-    * blist: list of bead types (bead list)
-    * sp: system params
-    """
-    T, E = np.zeros(sp.Nt), np.zeros(sp.Nt)
-    F = np.zeros(X.shape)
-    N = len(X)
-    ti = time.time()
-    
-    for i in range(sp.Nt):
-        X = X + V * sp.dt
-        V = V + F * sp.dt
-        F = force_list(X, V, iparams, blist, sp)
-
-        X = X % sp.L
-        KE = tot_KE(V)
-        E[i] = KE + tot_PE(X, iparams, blist, sp.rc)
-        T[i] = KE / (3.0 / 2.0 * N)
-        tf = time.time()
-        if (i+1) % sp.thermo == 0:
-            save_xyzmatrix("Dump/dump_%3i.xyz" % (i+1), blist, X)
-            print("Step: %i | t: %.4f | T: %.5f | E: %.3e | Time: %.2f" % \
-                (i+1, i * sp.dt, T[i], E[i], tf - ti))
-    return T, E
-
-
-def integrate_verlet(X, V, iparams, blist, sp):
-    """
-    Verlet integration for Nt steps.
-    Save each thermo-multiple step into xyz_frames.
-    Mass set to 1.0. Input:
-    * X: (N, 3) matrix
-    * V: (N, 3) matrix
-    * iparams: (Nbt, Nbt) matrix with interaction params
-    * blist: list of bead types (bead list)
-    * sp: misc system params
-    """
-    T, E = np.zeros(sp.Nt), np.zeros(sp.Nt)
-    Vtemp = np.zeros(X.shape)
-    Fnew = np.zeros(X.shape)
-    ti = time.time()
-
-    F = force_list(X, V, iparams, blist, sp)
-    T[0] = temperature(V)
-    E[0] = tot_KE(V) + tot_PE(X, iparams, blist, sp)
-    save_xyzmatrix("Dump/dump_%i.xyz" % 0, blist, X)
-    tf = time.time()
-
-    for i in range(1, sp.Nt):
-        X = X + V * sp.dt + F * sp.dt**2 / 2.0
-        Fnew = force_list(X, V, iparams, blist, sp)
-        V = V + (F + Fnew) * sp.dt / 2.0
-        F = Fnew
-
-        X = X % L
-
-        T[i] = temperature(V)
-        E[i] = tot_KE(V) + tot_PE(X, iparams, blist, sp)
-        tf = time.time()
-        if (i+1) % sp.thermo == 0:
-            save_xyzmatrix("Dump/dump_%3i.xyz" % (i+1), blist, X)
-            print("Step: %i | t: %.4f | T: %.5f | E: %.3e | Time: %.2f" % \
-                (i+1, i * dt, T[i], E[i], tf - ti))
-    return T, E
-
-
-# ===== code with lookup tables
-def build_lookup_table(X, L, cutoff=2.0, page=150):  # fix page
-    """Create a dict for each bead storing positions of 
-    neighbouring beads within given cutoff"""
-    N = len(X)
-    lt = dict()
-#    lt = -1 * np.ones(N, page)
-    for i in range(N): lt[i] = []
-    cell = L*np.eye(3)
-    inv_cell = np.linalg.pinv(cell)
-    for i in range(N):
-        for j in range(i):
-            dr = X[i] - X[j]
-            G = np.dot(inv_cell, dr)
-            G_n = G - np.round(G)
-            dr_n = np.dot(cell, G_n)
-            if norm(dr_n) < cutoff:
-                lt[i].append(j)
-                lt[j].append(i)
-    return lt
-
-
-def force_list_lookup(X, V, lt, iparams, blist, sp):
-    """Get force matrix from lookup table"""
-    N = len(X)
-    force_mat = np.zeros((N, N, 3))
-    cell = sp.L*np.eye(3)
-    inv_cell = np.linalg.pinv(cell)
-    for i in range(N):
-        dr = X[i] - X[j]       # rij = ri - rj
-        G = np.dot(inv_cell, dr)
-        G_n = G - np.round(G)
-        dr_n = np.dot(cell, G_n)
-        v_ij = V[i] - V[j]     # vij = vi - vj
-        force_mat[i, j] = F_tot(dr_n, v_ij, iparams[(blist[i], blist[j])], sp)
-
-    force_mat -= np.transpose(force_mat, (1, 0, 2))
-    return np.sum(force_mat, axis=1)
-    
 
