@@ -5,6 +5,7 @@ Module storing integrating functions.
 16/10/17
 """
 import numpy as np
+from dpd_io import save_xyzfile
 
 
 def integrate_f(X, V, bl, ip, box, gama, kT, dt, \
