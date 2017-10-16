@@ -4,15 +4,12 @@
 Dissipative particle dynamics simulation of non-bonded particles.
 Based on [http://dx.doi.org/10.1063/1.474784](Groot, JCP, 1997).
 
-### Run
-```
-./gen_input.py
-./dpd_sim input.yaml
-```
+Written in Fortran (pure or via f2py), Python, and Julia.
+Fortran is about an order of magnitude faster than Python/Numba.
 
 ### Requirements
 * Python3
-* `pip3 install numpy docopt yaml`
+* numpy, numba, docopt
 
 
 ## TO DO
@@ -20,5 +17,3 @@ Based on [http://dx.doi.org/10.1063/1.474784](Groot, JCP, 1997).
 * [L] Add bonds
 * [M] Add pressure
 * [S] Generalise velocity-Verlet algo
-
-
