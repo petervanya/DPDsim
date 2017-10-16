@@ -2,15 +2,13 @@
 """
 A collection of functions for the DPD simulation.
 
-23/06/16
+13/10/17
 """
 import numpy as np
 from numpy import sqrt
 from numpy.random import rand, randn
-from numpy.linalg import norm
 from numba import jit, float64, int64
 from dpd_io import save_xyzfile
-import time
 
 
 @jit(float64(float64[:]), nopython=True)
@@ -33,10 +31,11 @@ def matvecmul(A, b):
 
 @jit(float64[:](float64[:]))
 def round_numba(g):
+    """Does not work with nopython"""
     N = len(g)
     gr = np.zeros(N)
     for i in range(N):
-        gr[i] = g[i] - round(g[i])
+        gr[i] = round(g[i])
     return gr
 
 
@@ -47,22 +46,32 @@ def dot_numba(r, v):
         rv += r[i] * v[i]
     return rv
 
+@jit(float64[:, :](float64[:, :, :]), nopython=True)
+def sum_numba(A):
+    """Sum by 1st index"""
+    N = A.shape
+    B = np.zeros((N[0], N[2]))
+    for i in range(N[0]):
+        for j in range(N[2]):
+            for k in range(N[1]):
+                B[i, j] += A[i, k, j]
+    return B
 
-@jit(float64(float64[:], float64), nopython=True)
-def wR(r, rc):
+
+@jit(float64(float64), nopython=True)
+def wr(nr):
     """Weight function, r>0 is mutual distance"""
-    nr = norm_numba(r)
     return (1 - nr) if nr < 1.0 else 0.0
 
 
-@jit(float64[:](float64[:], float64[:],\
-     float64, float64, float64, float64, float64), nopython=True)
+@jit(float64[:](float64[:], float64[:], float64, \
+        float64, float64, float64), nopython=True)
 def F_tot(r, v, a, gamma, kT, dt):
     """Total force between two particles"""
     nr = norm_numba(r)
-    ftot = a * wR(r) * r/nr \
-           - gamma * wR(r)**2 * dot_numba(r, v) * r / nr**2 \
-           + sqrt(2.0 * gamma * kT) * wR(r) * randn() / sqrt(dt) * r / nr
+    ftot = a * wr(nr) * r / nr \
+            - gamma * wr(nr)**2 * dot_numba(r, v) * r / nr**2 \
+            + sqrt(2.0 * gamma * kT) * wr(nr) * randn() / sqrt(dt) * r / nr
     return ftot
 
 
@@ -77,30 +86,38 @@ def force_mat(X, V, bl, ip, box, gamma, kT, dt):
     Output:
     * (N, 3) force on each particle"""
     N = len(X)
-    fmat = np.zeros((N, 3))
-    fcube = np.zeros((N, N, 3))
-    inv_box = pinv(box)
+    F = np.zeros((N, 3))
+    Fm = np.zeros((N, N, 3))
+    inv_box = np.zeros((3, 3))
+    for i in range(3): inv_box[i, i] = 1.0 / box[i, i]
     g = np.zeros(3)
     rij = np.zeros(3)
     vij = np.zeros(3)
+
     for i in range(N):
         for j in range(i):
             rij = X[i] - X[j]
-            g = np.dot(inv_box, rij)
-            g = g - np.round(g)
-            rij = np.dot(box, g)
-            v_ij = V[i] - V[j]
+            g = matvecmul(inv_box, rij)
+            g = g - round_numba(g)
+            rij = matvecmul(box, g)
+            vij = V[i] - V[j]
+            Fm[i, j, :] = F_tot(rij, vij, ip[bl[i]-1, bl[j]-1], gamma, kT, dt)
+            Fm[j, i, :] = -Fm[i, j, :]
+    F = np.sum(Fm, 1)
+#    F = sum_numba(Fm)
+    return F
 
-            fcube[i, j, :] = F_tot(rij, vij, ip[bl[i], bl[j]], gamma, kT, dt)
-            fcube[j, i, :] = -fcube[i, j, :]
-    fmat = np.sum(fcube, 2)
-    return fmat
 
-
-@jit(float64(float64[:, :], float64[:, :], int64[:], float64))#, nopython=True)
+@jit(float64(float64[:, :], int64[:], float64[:, :], float64[:, :]), \
+        nopython=True)
 def tot_PE(X, bl, ip, box):
+    """Using '@', np.dot, inv or pinv will throw
+    Intel MKL FATAL ERROR: Cannot load libmkl_avx2.so or libmkl_def.so.
+    """
     N = len(X)
-    inv_box = pinv(box)
+    inv_box = np.zeros((3, 3))
+#    inv_box = np.linalg.inv(box)
+    for i in range(3): inv_box[i, i] = 1.0 / box[i, i]
     rij = np.zeros(3)
     g = np.zeros(3)
 
@@ -108,10 +125,10 @@ def tot_PE(X, bl, ip, box):
     for i in range(N):
         for j in range(i):
             rij = X[i] - X[j]
-            g = inv_box @ rij
-            g = g - np.round(g)
-            rij = box @ g
-            E += ip[bl[i], bl[j]] * (1 - norm_numba(rij))**2 / 2.0
+            g = matvecmul(inv_box, rij)
+            g = g - round_numba(g)
+            rij = matvecmul(box, g)
+            E += ip[bl[i]-1, bl[j]-1] * wr(norm_numba(rij))**2 / 2.0
     return E
 
 
@@ -124,16 +141,16 @@ def tot_KE(V):
     return KE
 
 
-def euler_step(X, V, bl, ip, box, gama, kT, dt):
-    F = np.zeros((N, 3))
-    F = force_mat(X, V2, bl, ip, box, gamma, kT, dt)
+def euler_step(X, V, bl, ip, box, gamma, kT, dt):
+    F = np.zeros(X.shape)
+    F = force_mat(X, V, bl, ip, box, gamma, kT, dt)
     V += F * dt
     X += V * dt
     return X, V
  
 
-def verlet_step(X, V, F, bl, ip, box, gama, kT, dt):
-    V2 = np.zeros((N, 3))
+def verlet_step(X, V, F, bl, ip, box, gamma, kT, dt):
+    V2 = np.zeros(X.shape)
     V2 = V + 0.5 * F * dt
     X += V2 * dt
     F = force_mat(X, V2, bl, ip, box, gamma, kT, dt)
@@ -141,44 +158,18 @@ def verlet_step(X, V, F, bl, ip, box, gama, kT, dt):
     return X, V, F
 
 
-def integrate(X, V, bl, ip, box, gamma, kT, dt,\
-        Nt, Neq, thermo, df, style="euler"):
-    N = len(X)
-    T = np.zeros(Nt+1)
-    KE = np.zeros(Nt+1)
-    PE = np.zeros(Nt+1)
-
-    ti = time.time()    
-    for i in range(2, Nt+1):
-        if style == "euler":
-            X, V = euler_step(X, V, bl, ip, box, gama, kT, dt)
-        elif style == "verlet":
-            X, V, F = verlet_step(X, V, F, bl, ip, box, gama, kT, dt)
-
-        X = X % np.diag(box)
-        KE[i] = tot_KE(V)
-        PE[i] = tot_PE(X, bl, ip, box)
-        T[i] = KE[i] / (3.0 / 2.0 * N)
-        if i % thermo == 0:
-            print("Step: %3.i | T: %.5f | KE: %.3e | PE: %.3e" % \
-                (i+1, T[i], KE[i], PE[i]))
-        if i >= Neq and i % df == 0:
-            save_xyzfile("Dump/dump_%i.xyz" % i, bl, X)
-    return T, KE, PE
-
-
 @jit(float64(float64[:, :]), nopython=True)
 def temperature(V):
     return tot_KE(V) / ((3 * len(V) - 3) / 2.0)
 
 
-@jit(float64[:, :](int64, float64, int64))
+@jit(float64[:, :](int64, float64[:, :]))
 def init_pos(N, box):
     X = rand(N, 3) * np.diag(box)
     return X
 
 
-@jit(float64[:, :](float64, float64))
+@jit(float64[:, :](int64, float64))
 def init_vel(N, kT):
     V = randn(N, 3) * kT
     return V - np.sum(V, 0) / N
