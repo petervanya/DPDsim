@@ -9,7 +9,7 @@ from dpd_io import save_xyzfile
 
 
 def integrate_f(X, V, bl, ip, box, gama, kT, dt, \
-        Nt, Neq, thermo, df, style):
+        Nt, Neq, thermo, df, dump_vel, dump_for, style):
     """Integrate using dpd_f.f90 module"""
     from Fdpd.dpd_f import dpd_f
     N = len(X)
@@ -18,6 +18,13 @@ def integrate_f(X, V, bl, ip, box, gama, kT, dt, \
     T = np.zeros(Nt+1)
 
     F = dpd_f.force_mat(X, V, bl, ip, box, gama, kT, dt)
+    save_xyzfile("dump_0.xyz", bl, X)
+    if dump_vel:
+        save_xyzfile("dump_0.vel", bl, V)
+    if dump_for:
+        save_xyzfile("dump_0.for", bl, F)
+
+    print("Step T KE PE")
     for it in range(1, Nt+1):
         if style == "euler":
             _ = dpd_f.euler_step(X, V, bl, ip, box, gama, kT, dt)
@@ -29,15 +36,18 @@ def integrate_f(X, V, bl, ip, box, gama, kT, dt, \
         PE[it] = dpd_f.tot_pe(X, bl, ip, box)
         T[it] = KE[it] / ((3 * N - 3) / 2.0)
         if it % thermo == 0:
-            print("Step: %3.i | T: %.5f | KE: %.3e | PE: %.3e" % \
-                (it, T[it], KE[it], PE[it]))
+            print("%3.i %.5f %.3e %.3e" % (it, T[it], KE[it], PE[it]))
         if it >= Neq and it % df == 0:
             save_xyzfile("Dump/dump_%05i.xyz" % it, bl, X)
+            if dump_vel:
+                save_xyzfile("Dump_vel/dump_%05i.vel" % it, bl, V)
+            if dump_for:
+                save_xyzfile("Dump_for/dump_%05i.for" % it, bl, F)
     return T, KE, PE
 
 
 def integrate_numba(X, V, bl, ip, box, gamma, kT, dt,\
-        Nt, Neq, thermo, df, style):
+        Nt, Neq, thermo, df, dump_vel, dump_for, style):
     from dpd_functions import euler_step, verlet_step, \
             tot_KE, tot_PE, force_mat
     N = len(X)
@@ -46,6 +56,13 @@ def integrate_numba(X, V, bl, ip, box, gamma, kT, dt,\
     PE = np.zeros(Nt+1)
 
     F = force_mat(X, V, bl, ip, box, gamma, kT, dt)
+    save_xyzfile("dump_0.xyz", bl, X)
+    if dump_vel:
+        save_xyzfile("dump_0.vel", bl, V)
+    if dump_for:
+        save_xyzfile("dump_0.for", bl, F)
+
+    print("Step T KE PE")
     for it in range(1, Nt+1):
         if style == "euler":
             X, V = euler_step(X, V, bl, ip, box, gamma, kT, dt)
@@ -57,10 +74,13 @@ def integrate_numba(X, V, bl, ip, box, gamma, kT, dt,\
         PE[it] = tot_PE(X, bl, ip, box)
         T[it] = KE[it] / ((3 * N - 3) / 2.0)
         if it % thermo == 0:
-            print("Step: %3.i | T: %.5f | KE: %.5e | PE: %.5e" % \
-                (it, T[it], KE[it], PE[it]))
+            print("%3.i %.5f %.3e %.3e" % (it, T[it], KE[it], PE[it]))
         if it >= Neq and it % df == 0:
             save_xyzfile("Dump/dump_%05i.xyz" % it, bl, X)
+            if dump_vel:
+                save_xyzfile("Dump_vel/dump_%05i.vel" % it, bl, V)
+            if dump_for:
+                save_xyzfile("Dump_for/dump_%05i.for" % it, bl, F)
     return T, KE, PE
 
 
