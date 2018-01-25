@@ -12,7 +12,7 @@ def save_xyzfile(fname, names, mat):
     M = len(mat)
     s = "%i\nbla\n" % M
     for i in range(M):
-        s += "%i\t%.3f\t%.3f\t%.3f\n" % \
+        s += "%i\t%.10f\t%.10f\t%.10f\n" % \
                 (names[i], mat[i, 0], mat[i, 1], mat[i, 2])
     open(fname, "w").write(s)
 
@@ -24,7 +24,10 @@ def read_xyzfile(fname):
         sys.exit("File %s not found." % fname)
     A = [line.split() for line in A]
     A = np.array(A).astype(float)
-    return A
+    if A.shape[1] != 4:
+        sys.exit("Incorrect number of columns in %s." % fname)
+    nm, xyz = A[:, 0], A[:, 1:]
+    return nm, xyz
 
 
 def parse_box(arg):
