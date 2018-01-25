@@ -99,9 +99,10 @@ def force_mat(X, V, bl, ip, box, gamma, kT, dt):
             rij = X[i] - X[j]
             g = matvecmul(inv_box, rij)
             g = g - round_numba(g)
+#            g = g - np.round_(g, 0, np.empty_like(g))
             rij = matvecmul(box, g)
             vij = V[i] - V[j]
-            Fm[i, j, :] = F_tot(rij, vij, ip[bl[i]-1, bl[j]-1], gamma, kT, dt)
+            Fm[i, j, :] = F_tot(rij, vij, ip[bl[i], bl[j]], gamma, kT, dt)
             Fm[j, i, :] = -Fm[i, j, :]
     F = np.sum(Fm, 1)
 #    F = sum_numba(Fm)
