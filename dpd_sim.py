@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Usage:
-    dpd_sim.py <method> [--L <L> --N <N> --dt <dt> --gamma <g>]
-               [--read <xyz> --steps <ns> --eq <eq> --thermo <th>]
-               [--dump-freq <df> --seed <s> --style <st>]
+    dpd_sim.py <method> [--L <L> --N <N> --dt <dt> --gamma <g> --seed <s>]
+               [--steps <ns> --eq <eq> --thermo <th> --style <st>]
+               [--dump-freq <df> --dump-vel --dump-for]
+               [--xyz <xyz> --vel <vel>]
 
 Simulate a DPD binary mixture.
 
@@ -14,15 +15,18 @@ Options:
     --L <L>            Box size [default: 5]
     --dt <dt>          Timestep [default: 0.05]
     --steps <ns>       Number of steps [default: 100]
-    --eq <eq>          Equilibration steps [default: 90]
+    --eq <eq>          Equilibration steps [default: 0]
     --thermo <th>      Frequency of printing to screen [default: 10]
     --dump-freq <df>   Frequency of printing to file [default: 10]
     --gamma <g>        Friction [default: 4.5]
-    --read <xyz>       Read the xyz file, else generate beads randomly
     --seed <s>         Random seed [default: 1234]
-    --style <st>       Integration style [default: euler]
+    --style <st>       Integration style [default: verlet]
+    --dump-vel         Dump velocities
+    --dump-for         Dump forces
+    --xyz <xyz>        Read the xyz file, else generate beads randomly
+    --vel <vel>        Read the velocity file, else generate them randomly
 
-14/10/17
+peter.vanya~gmail, 14/10/17
 """
 import numpy as np
 import os, time
@@ -50,39 +54,51 @@ if __name__ == "__main__":
 
     dumpdir = "Dump"
     if not os.path.exists(dumpdir): os.makedirs(dumpdir)
+    dump_vel = args["--dump-vel"]
+    dump_for = args["--dump-for"]
+    if dump_vel and not os.path.exists("Dump_vel"): os.makedirs("Dump_vel")
+    if dump_for and not os.path.exists("Dump_for"): os.makedirs("Dump_for")
 
-    if args["--read"]:
-        bl, X = read_xyzfile(args["--read"])
+    if args["--xyz"]:
+        fname = args["--xyz"]
+        print("Reading coordinates %s..." % fname)
+        bl, X = read_xyzfile(fname)
+        bl = bl.astype(int)
         X = X % np.diag(box)
         Nbt = len(set(bl))
-        ip = np.zeros((Nbt, Nbt))
-        ip = 25.0
+        ip = np.ones((Nbt+1, Nbt+1)) * 25.0
     else:
         X = np.random.rand(N, 3) * np.diag(box)
         bl = np.ones(N).astype(int)
         ip = np.array([[25.0]])
 
-    V = np.random.randn(N, 3) * kT
-    V = V - np.sum(V, 0) / N
+    if args["--vel"]:
+        fname = args["--vel"]
+        print("Reading velocities from %s..." % fname)
+        _, V = read_xyzfile(fname)
+    else:
+        V = np.random.randn(N, 3) * kT
+        V = V - np.sum(V, 0) / N
 
     print("===== DPD simulation =====")
     print("N: %i | L: %s | rho: %.2f" % (N, np.diag(box), rho))
     print("gamma: %.2f | kT: %.1f | dt: %.3f" % (gamma, kT, dt))
-    print("Steps: %i | eq: %i | Thermo: %i | dump-freq: %i" \
+    print("Steps: %i | Neq: %i | Thermo: %i | dump-freq: %i" \
             % (Nt, Neq, thermo, df))
+    print("Integration: %s" % style)
 
     ti = time.time()
     mt = args["<method>"].lower()
     if mt == "numba":
         from dpd_int import integrate_numba
         T, KE, PE = integrate_numba(X, V, bl, ip, box, gamma, kT, dt, \
-                Nt, Neq, thermo, df, style=style)
+                Nt, Neq, thermo, df, dump_vel, dump_for, style)
     elif mt == "fortran":
         from dpd_int import integrate_f
         X = np.asfortranarray(X)
         V = np.asfortranarray(V)
         T, KE, PE = integrate_f(X, V, bl, ip, box, gamma, kT, dt, \
-                Nt, Neq, thermo, df, style=style)
+                Nt, Neq, thermo, df, dump_vel, dump_for, style)
 
     print("Simulation time: %.2f s." % (time.time() - ti))
 
