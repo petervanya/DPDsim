@@ -1,8 +1,9 @@
 #!/bin/bash
 
+echo "Compiling..."
 cd Fdpd
-#make
-#make f2py
+make
+make f2py
 cd ..
 
 fname=".bashrc.dpd"
