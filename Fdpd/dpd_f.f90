@@ -90,7 +90,7 @@ function tot_pe(X, bl, ip, box) result (pe)
     inv_box = 0.0  ! do not forget this, else will spend hours debugging
 
     forall (i = 1:3) inv_box(i, i) = 1.0 / box(i, i)
-    
+
     do i = 1, n
         do j = 1, i-1
             rij = X(i, :) - X(j, :)
@@ -181,9 +181,8 @@ end subroutine
 
 subroutine print_mat(A)
     real(8), intent(in) :: A(:, :)
-    integer :: M, N, i
+    integer :: M, i
     M = size(A, 1)
-    N = size(A, 2)
     do i = 1, M
         print '(f5.3, " ", f5.3, " ", f5.3)', A(i, 1), A(i, 2), A(i, 3)
     enddo
