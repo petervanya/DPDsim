@@ -72,8 +72,8 @@ if __name__ == "__main__":
         bl, X = read_xyzfile(fname)
         bl = bl.astype(int)
         X = X % np.diag(box)
-        Nbt = len(set(bl))
-        ip = np.ones((Nbt+1, Nbt+1)) * 25.0
+        Ntp = len(set(bl))
+        ip = np.ones((Ntp, Ntp)) * 25.0
     else:
         X = np.random.rand(N, 3) * np.diag(box)
         bl = np.ones(N).astype(int)
