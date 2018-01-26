@@ -11,14 +11,15 @@ all: main
 run: all
 	./main
 
-main: dpd_io.o dpd_f.o main.o
+main: dpd_io.o dpd_f.o mdpd_f.o main.o
 	${FC} -o $@ $^
 
 %.o: %.f90
 	${FC} ${FLAGS} -c $<
 
-f2py: dpd_f.f90
-	${F2PY} -c $< --fcompiler=${FVENDOR} -m dpd_f
+f2py: dpd_f.f90 mdpd_f.f90
+	${F2PY} -c dpd_f.f90 --fcompiler=${FVENDOR} -m dpd_f
+	${F2PY} -c mdpd_f.f90 --fcompiler=${FVENDOR} -m mdpd_f
 
 
 clean:
