@@ -33,22 +33,22 @@ function gaussnum() result (y)
 end function
 
 
-function f_tot(r, v, a, gama, kT, dt) result (ft)
-    ! Tried uniform numbers, temperature goes to zero
-    real(8), intent(in) :: r(3), v(3), a, gama, kT, dt
-    real(8) :: ft(3), nr
-    nr = norm2(r)
-    ft(:) = a * wr(nr) * r(:) / nr &
-        - gama * wr(nr)**2 * dot_product(r, v) * r(:) / nr**2 &
-        + sqrt(2 * gama * kT) * wr(nr) * gaussnum() / sqrt(dt) * r(:) / nr
-end function
+!function f_tot(r, v, a, gama, kT, dt) result (ft)
+!    ! Tried uniform numbers, temperature goes to zero
+!    real(8), intent(in) :: r(3), v(3), a, gama, kT, dt
+!    real(8) :: ft(3), nr
+!    nr = norm2(r)
+!    ft(:) = a * wr(nr) * r(:) / nr &
+!        - gama * wr(nr)**2 * dot_product(r, v) * r(:) / nr**2 &
+!        + sqrt(2 * gama * kT) * wr(nr) * gaussnum() / sqrt(dt) * r(:) / nr
+!end function
 
 
 function force_mat(X, V, bl, ip, box, gama, kT, dt) result (F)
     integer, intent(in) :: bl(:)
     real(8), intent(in) :: X(:, :), V(:, :), ip(:, :), box(3, 3)
     real(8), intent(in) :: gama, kT, dt
-    real(8) :: g(3), rij(3), vij(3), inv_box(3, 3)
+    real(8) :: g(3), rij(3), vij(3), inv_box(3, 3), fpair, a, nr
     integer :: i, j, N
     real(8) :: fm(size(X, 1), size(X, 1), 3), F(size(X, 1), 3)
     N = size(X, 1)
@@ -65,8 +65,15 @@ function force_mat(X, V, bl, ip, box, gama, kT, dt) result (F)
             g = g - nint(g)
             rij = matmul(box, g)
             vij = V(i, :) - V(j, :)
-            fm(i, j, :) = f_tot(rij, vij, ip(bl(i), bl(j)), gama, kT, dt)
-            fm(j, i, :) = -fm(i, j, :)
+
+            a = ip(bl(i), bl(j))
+            nr = norm2(rij)
+
+            fpair = a * wr(nr) &
+                - gama * wr(nr)**2 * dot_product(rij, vij) / nr &
+                + sqrt(2*gama*kT) * wr(nr) * gaussnum() / sqrt(dt)
+            fm(i, j, :) = fpair / nr * rij(:)
+            fm(j, i, :) = -fpair / nr * rij(:)
         enddo
     enddo
     F = sum(fm, 2)
