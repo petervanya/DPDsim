@@ -14,7 +14,7 @@ EOF
 
 cdir=$(pwd)
 
-echo 'export PYTHONPATH=$PYTHONPATH:'$cdir/Pydpd >>$HOME/$fname
+echo 'export PYTHONPATH=$PYTHONPATH:'$cdir >>$HOME/$fname
 echo 'export PYTHONPATH=$PYTHONPATH:'$cdir/Fdpd >>$HOME/$fname
 echo "" >>$HOME/$fname
 echo 'export PATH=$PATH':$cdir >>$HOME/$fname
