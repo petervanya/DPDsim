@@ -25,11 +25,11 @@ def integrate_numba(X, V, bl, ip, box, gamma, kT, dt,\
     F, vir, sigma = compute_force(X, V, bl, ip, box, gamma, kT, dt)
 
     # save first screenshot
-    save_xyzfile("dump_0.xyz", bl, X)
+    save_xyzfile("Dump/dump_%05i.xyz" % 0, bl, X)
     if dump_vel:
-        save_xyzfile("dump_0.vel", bl, V)
+        save_xyzfile("Dump/dump_%05i.vel" % 0, bl, V)
     if dump_for:
-        save_xyzfile("dump_0.for", bl, F)
+        save_xyzfile("Dump/dump_%05i.for" % 0, bl, F)
 
     print("step temp ke pe p pxx pyy pzz")
     for it in range(1, Nt+1):
@@ -43,9 +43,9 @@ def integrate_numba(X, V, bl, ip, box, gamma, kT, dt,\
         ke = compute_ke(V)
         pe = compute_pe(X, bl, ip, box)
         temp = ke / ((3*N - 3) / 2.0)
-        pxx, pyy, pzz = np.diag(sigma)
-        p = pxx + pyy + pzz
-        p = rho * kT + vir / (3 * volume)
+        pxx, pyy, pzz = sigma #np.diag(sigma)
+        p = (pxx + pyy + pzz) / 3.0
+#        p = rho * kT + vir / (3 * volume)
 
         KE[it], PE[it], T[it], P[it], Pxx[it], Pyy[it], Pzz[it] = \
             ke, pe, temp, p, pxx, pyy, pzz
@@ -78,11 +78,11 @@ def integrate_f(X, V, bl, ip, box, gama, kT, dt, \
     T = np.zeros(Nt+1)
     F = dpd_f.force_mat(X, V, bl, ip, box, gama, kT, dt)
 
-    save_xyzfile("dump_0.xyz", bl, X)
+    save_xyzfile("Dump/dump_%05i.xyz" % 0, bl, X)
     if dump_vel:
-        save_xyzfile("dump_0.vel", bl, V)
+        save_xyzfile("Dump/dump_%05i.vel" % 0, bl, V)
     if dump_for:
-        save_xyzfile("dump_0.for", bl, F)
+        save_xyzfile("Dump/dump_%05i.for" % 0, bl, F)
 
     print("step temp ke pe")
     for it in range(1, Nt+1):
@@ -123,11 +123,11 @@ def integrate_f_mdpd(X, V, bl, Ntp, ip, box, gama, kT, dt, ipb, rd, \
     F = mdpd_f.force_mat(X, V, bl, Ntp, ip[1:, 1:], 
             box, gama, kT, dt, ipb[1:, 1:], rd)
 
-    save_xyzfile("dump_0.xyz", bl, X)
+    save_xyzfile("Dump/dump_%05i.xyz" % 0, bl, X)
     if dump_vel:
-        save_xyzfile("dump_0.vel", bl, V)
+        save_xyzfile("Dump/dump_%05i.vel" % 0, bl, V)
     if dump_for:
-        save_xyzfile("dump_0.for", bl, F)
+        save_xyzfile("Dump/dump_%05i.for" % 0, bl, F)
 
     print("step temp ke pe(rep term)")
     for it in range(1, Nt+1):
