@@ -114,10 +114,11 @@ def compute_force(X, V, bl, ip, box, gamma, kT, dt):
     a = 0.0
     nr = 0.0
     fpair = 0.0
+
     vir = 0.0
-    sigma_kin = np.zeros((3, 3))
-    sigma_pot = np.zeros((3, 3))
-    sigma = np.zeros((3, 3))
+    sigma_kin = np.zeros(3)
+    sigma_pot = np.zeros(3)
+    sigma = np.zeros(3)
     volume = np.linalg.det(box)
 
     for i in range(N):
@@ -139,13 +140,13 @@ def compute_force(X, V, bl, ip, box, gamma, kT, dt):
             Fm[j, i, :] = -fpair / nr * rij
 
             vir += Fm[i, j, :] @ rij
-            sigma_pot += np.outer(Fm[i, j, :], rij)
+            sigma_pot += Fm[i, j, :] * rij
 
     # kinetic part of stress tensor
     for i in range(N):
-        sigma_kin -= np.outer(V[i], V[i])
+        sigma_kin += V[i] * V[i]
+
     sigma = (sigma_kin + sigma_pot) / volume
-            
     F = np.sum(Fm, 1)
 
     return F, vir, sigma
