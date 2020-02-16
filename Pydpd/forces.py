@@ -105,7 +105,7 @@ def compute_force(X, V, bl, ip, box, gamma, kT, dt):
     """
     N = len(X)
     F = np.zeros((N, 3))
-    Fm = np.zeros((N, N, 3))
+    Fcube = np.zeros((N, N, 3))
     inv_box = np.zeros((3, 3))
     for i in range(3): inv_box[i, i] = 1.0 / box[i, i]
     g = np.zeros(3)
@@ -116,8 +116,6 @@ def compute_force(X, V, bl, ip, box, gamma, kT, dt):
     fpair = 0.0
 
     vir = 0.0
-    sigma_kin = np.zeros(3)
-    sigma_pot = np.zeros(3)
     sigma = np.zeros(3)
     volume = np.linalg.det(box)
 
@@ -136,18 +134,18 @@ def compute_force(X, V, bl, ip, box, gamma, kT, dt):
             fpair = fc \
                 - gamma * wr(nr)**2 * dot_numba(rij, vij) / nr \
                 + sqrt(2.0*gamma*kT) * wr(nr) * np.random.randn() / sqrt(dt)
-            Fm[i, j, :] = fpair / nr * rij
-            Fm[j, i, :] = -fpair / nr * rij
+            Fcube[i, j, :] = fpair / nr * rij
+            Fcube[j, i, :] = -fpair / nr * rij
 
-            vir += Fm[i, j, :] @ rij
-            sigma_pot += Fm[i, j, :] * rij
+            vir += Fcube[i, j, :] @ rij
+            sigma += Fcube[i, j, :] * rij
 
     # kinetic part of stress tensor
     for i in range(N):
-        sigma_kin += V[i] * V[i]
+        sigma += V[i] * V[i]
 
-    sigma = (sigma_kin + sigma_pot) / volume
-    F = np.sum(Fm, 1)
+    sigma = sigma / volume
+    F = np.sum(Fcube, 1)
 
     return F, vir, sigma
 
