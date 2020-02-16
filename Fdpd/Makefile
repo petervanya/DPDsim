@@ -1,6 +1,6 @@
 # inspiration
 # https://stackoverflow.com/questions/35234003/how-to-create-a-makefile-for-a-fortran-program-using-modules
-F2PY = f2py
+F2PY = f2py3
 FVENDOR = gnu95
 FC = gfortran
 FLAGS = -g -fcheck=all -Wall -Wunused
