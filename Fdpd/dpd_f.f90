@@ -33,26 +33,15 @@ function gaussnum() result (y)
 end function
 
 
-!function f_tot(r, v, a, gama, kT, dt) result (ft)
-!    ! Tried uniform numbers, temperature goes to zero
-!    real(8), intent(in) :: r(3), v(3), a, gama, kT, dt
-!    real(8) :: ft(3), nr
-!    nr = norm2(r)
-!    ft(:) = a * wr(nr) * r(:) / nr &
-!        - gama * wr(nr)**2 * dot_product(r, v) * r(:) / nr**2 &
-!        + sqrt(2 * gama * kT) * wr(nr) * gaussnum() / sqrt(dt) * r(:) / nr
-!end function
-
-
-function force_mat(X, V, bl, ip, box, gama, kT, dt) result (F)
+function compute_force_fun(X, V, bl, ip, box, gama, kT, dt) result (F)
     integer, intent(in) :: bl(:)
     real(8), intent(in) :: X(:, :), V(:, :), ip(:, :), box(3, 3)
     real(8), intent(in) :: gama, kT, dt
     real(8) :: g(3), rij(3), vij(3), inv_box(3, 3), fpair, a, nr
     integer :: i, j, N
-    real(8) :: fm(size(X, 1), size(X, 1), 3), F(size(X, 1), 3)
+    real(8) :: fcube(size(X, 1), size(X, 1), 3), F(size(X, 1), 3)
     N = size(X, 1)
-    fm = 0.0
+    fcube = 0.0
     g = 0.0
     inv_box = 0.0  ! do not forget this, else will spend hours debugging
 
@@ -72,15 +61,107 @@ function force_mat(X, V, bl, ip, box, gama, kT, dt) result (F)
             fpair = a * wr(nr) &
                 - gama * wr(nr)**2 * dot_product(rij, vij) / nr &
                 + sqrt(2*gama*kT) * wr(nr) * gaussnum() / sqrt(dt)
-            fm(i, j, :) = fpair / nr * rij(:)
-            fm(j, i, :) = -fpair / nr * rij(:)
+            fcube(i, j, :) = fpair / nr * rij(:)
+            fcube(j, i, :) = -fcube(i, j, :) !fpair / nr * rij(:)
         enddo
     enddo
-    F = sum(fm, 2)
+    F = sum(fcube, 2)
 end function
 
 
-function tot_pe(X, bl, ip, box) result (pe)
+subroutine compute_force(F, vir, sigma, X, V, bl, ip, box, gama, kT, dt)
+    real(8), intent(inout) :: F(:, :), vir, sigma(3)
+    real(8), intent(in) :: X(:, :), V(:, :), ip(:, :), box(3, 3)
+    integer, intent(in) :: bl(:)
+    real(8), intent(in) :: gama, kT, dt
+    !real(8), intent(out) :: F(size(X, 1), size(X, 2)), vir, sigma(3) ! DOES NOT WORK WITH F2PY!
+    real(8) :: g(3), rij(3), vij(3), inv_box(3, 3), volume, fpair, a, nr
+    integer :: i, j, N
+    real(8) :: fcube(size(X, 1), size(X, 1), 3)
+    N = size(X, 1)
+    fcube = 0.0
+    g = 0.0
+    inv_box = 0.0
+    volume = 1.0
+
+    vir = 0.0
+    sigma = 0.0
+    F = 0.0
+
+    forall (i = 1:3) inv_box(i, i) = 1.0 / box(i, i)
+!    forall (i = 1:3) volume = volume * box(i, i) ! DOES NOT WORK CORRECTLY
+    do i = 1, 3
+        volume = volume * box(i, i)
+    enddo
+
+    do i = 1, N
+        do j = 1, i-1
+            rij = X(i, :) - X(j, :)
+            g = matmul(inv_box, rij)
+            g = g - nint(g)
+            rij = matmul(box, g)
+            vij = V(i, :) - V(j, :)
+
+            a = ip(bl(i), bl(j))
+            nr = norm2(rij)
+
+            fpair = a * wr(nr) &
+                - gama * wr(nr)**2 * dot_product(rij, vij) / nr &
+                + sqrt(2*gama*kT) * wr(nr) * gaussnum() / sqrt(dt)
+            fcube(i, j, :) = fpair / nr * rij(:)
+            fcube(j, i, :) = -fcube(i, j, :) !fpair / nr * rij(:)
+
+            vir = vir + dot_product(fcube(i, j, :), rij(:))
+            sigma(:) = sigma(:) + fcube(i, j, :) * rij(:)
+        enddo
+    enddo
+
+    do i = 1, N  ! kinetic term of the stress tensor
+        sigma(:) = sigma(:) + V(i, :) * V(i, :)
+    enddo
+
+!    print *, "Virial = ", vir ! PASSES ZERO TO PYTHON!
+    sigma = sigma / volume
+    F = sum(fcube, 2)
+end subroutine
+
+
+function compute_force_cube(X, V, bl, ip, box, gama, kT, dt) result (fcube)
+    real(8), intent(in) :: X(:, :), V(:, :), ip(:, :), box(3, 3)
+    integer, intent(in) :: bl(:)
+    real(8), intent(in) :: gama, kT, dt
+    real(8) :: g(3), rij(3), vij(3), inv_box(3, 3), fpair, a, nr
+    integer :: i, j, N
+    real(8) :: fcube(size(X, 1), size(X, 1), 3)
+    N = size(X, 1)
+    fcube = 0.0
+    g = 0.0
+    inv_box = 0.0
+
+    forall (i = 1:3) inv_box(i, i) = 1.0 / box(i, i)
+
+    do i = 1, N
+        do j = 1, i-1
+            rij = X(i, :) - X(j, :)
+            g = matmul(inv_box, rij)
+            g = g - nint(g)
+            rij = matmul(box, g)
+            vij = V(i, :) - V(j, :)
+
+            a = ip(bl(i), bl(j))
+            nr = norm2(rij)
+
+            fpair = a * wr(nr) &
+                - gama * wr(nr)**2 * dot_product(rij, vij) / nr &
+                + sqrt(2*gama*kT) * wr(nr) * gaussnum() / sqrt(dt)
+            fcube(i, j, :) = fpair / nr * rij(:)
+            fcube(j, i, :) = -fcube(i, j, :) !fpair / nr * rij(:)
+        enddo
+    enddo
+end function
+
+
+function compute_pe(X, bl, ip, box) result (pe)
     integer, intent(in) :: bl(:)
     real(8), intent(in) :: X(:, :), ip(:, :), box(3, 3)
     integer :: i, j, N
@@ -103,7 +184,7 @@ function tot_pe(X, bl, ip, box) result (pe)
 end function
 
 
-function tot_ke(V) result (ke)
+function compute_ke(V) result (ke)
     real(8), intent(in) :: V(:, :)
     real(8) :: ke
     integer :: i, j, N
@@ -158,7 +239,7 @@ subroutine euler_step(X, V, bl, ip, box, gama, kT, dt)
     real(8) :: F(size(X, 1), 3)
     F = 0.0
 
-    F = force_mat(X, V, bl, ip, box, gama, kT, dt)
+    F = compute_force_fun(X, V, bl, ip, box, gama, kT, dt)
     V(:, :) = V(:, :) + F(:, :) * dt
     X(:, :) = X(:, :) + V(:, :) * dt
 end subroutine
@@ -174,7 +255,7 @@ subroutine verlet_step(X, V, F, bl, ip, box, gama, kT, dt)
 
     V2(:, :) = V(:, :) + 0.5 * F(:, :) * dt
     X(:, :) = X(:, :) + V2(:, :) * dt
-    F = force_mat(X, V2, bl, ip, box, gama, kT, dt)
+    F = compute_force_fun(X, V2, bl, ip, box, gama, kT, dt)
     V(:, :) = V2(:, :) + 0.5 * F(:, :) * dt
 end subroutine
 
