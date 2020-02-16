@@ -57,7 +57,7 @@ end program
 
 subroutine integrate(X, V, N, ip, Np, bl, box, &
         gama, kT, dt, Nt, Neq, thermo, df, KE, PE)
-    use dpd_f, only: tot_pe, tot_ke, force_mat, euler_step, verlet_step
+    use dpd_f, only: compute_pe, compute_ke, compute_force_fun, euler_step, verlet_step
     use dpd_io, only: write_xyz
     implicit none
     integer, intent(in) :: N, Np
@@ -74,7 +74,7 @@ subroutine integrate(X, V, N, ip, Np, bl, box, &
 
     print '("dt: ",f5.3," | kT: ",f5.3," | gama:",f5.3)', dt, kT, gama
 
-    F = force_mat(X, V, bl, ip, box, gama, kT, dt)
+    F = compute_force_fun(X, V, bl, ip, box, gama, kT, dt)
 !    ou = 20
 !    open(unit=ou, file="init_force.out", action="write")
 !    do i = 1, N
@@ -82,8 +82,8 @@ subroutine integrate(X, V, N, ip, Np, bl, box, &
 !    enddo
 !    close(ou)
 
-    KE(1) = tot_ke(V)
-    PE(1) = tot_pe(X, bl, ip, box)
+    KE(1) = compute_ke(V)
+    PE(1) = compute_pe(X, bl, ip, box)
     print *, "Initial values:", KE(1), PE(1)
 
     print *, "Integrating..."
@@ -96,8 +96,8 @@ subroutine integrate(X, V, N, ip, Np, bl, box, &
                 X(i, j) = mod(X(i, j) + box(j, j), box(j, j))
             enddo
         enddo
-        KE(it) = tot_ke(V)
-        PE(it) = tot_pe(X, bl, ip, box)
+        KE(it) = compute_ke(V)
+        PE(it) = compute_pe(X, bl, ip, box)
         T = KE(it) / ((3 * N - 3) / 2.0)
 
         if (mod(it, thermo) == 0) then
