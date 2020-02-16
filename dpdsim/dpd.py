@@ -4,6 +4,8 @@ from numpy import sqrt
 from numba import jit, float64, int64
 import os
 import sys
+import time
+from Fdpd.dpd_f import dpd_f
 
 
 class DPDSim():
@@ -38,10 +40,12 @@ class DPDSim():
         self.Nt = steps
         self.Neq = equilibration_steps
         self.thermo = thermo
+
         self.style = integration_style.lower()
         styles = ["euler", "verlet"]
         if self.style not in styles:
             assert self.style in styles, "Choose style from %s." % styles
+
         self.imp = implementation
         imps = ["numba", "fortran"]
         if self.imp not in imps:
@@ -97,8 +101,8 @@ class DPDSim():
         
         elif kind == "binary":
             N1 = int(f * self.N)
-            N2 = N - N1
-            self.bl = np.r_[np.ones(self.N1), np.ones(self.N2)].astype(int)
+            N2 = self.N - N1
+            self.bl = np.r_[np.ones(N1), 2*np.ones(N2)].astype(int)
             self.ip = np.zeros((3, 3))
             self.ip[1:, 1:] = np.array([[a, a+da], [a+da, a]])
             
@@ -153,58 +157,47 @@ class DPDSim():
         return self.compute_ke() / ((3 * self.N - 3) / 2.0)
 
 
-    @jit #(nopython=True)
+    @jit
     def compute_force(self):
         """Compute force and stress tensor"""
-        Fm = np.zeros((self.N, self.N, 3))
-        g = np.zeros(3)
-        rij = np.zeros(3)
-        vij = np.zeros(3)
-        a = 0.0
-        nr = 0.0
-        fpair = 0.0
+        if self.imp == "numba":
+            self.F, self.vir, self.sigma = \
+                compute_force_numba(self.X, self.V, self.bl, self.ip, \
+                self.box, self.gama, self.kT, self.dt)
 
-        self.vir = 0.0
-        sigma_kin = np.zeros((3, 3))
-        sigma_pot = np.zeros((3, 3))
+        elif self.imp == "fortran":
+            if self.F is None:
+                self.F = np.zeros_like(self.X, order="F")
+            if self.vir is None:
+                self.vir = 0.0
+            if self.sigma is None:
+                self.sigma = np.zeros(3, order="F")
 
-        for i in range(self.N):
-            for j in range(i):
-                rij = self.X[i] - self.X[j]
-                g = matvecmul(self.inv_box, rij)
-                g = g - np.round_(g, 0, np.empty_like(g))
-                rij = matvecmul(self.box, g)
-                vij = self.V[i] - self.V[j]
-             
-                a = self.ip[self.bl[i], self.bl[j]]
-                nr = norm_numba(rij)
-             
-                fc = a * wr(nr)
-                fpair = fc \
-                    - self.gama * wr(nr)**2 * dot_numba(rij, vij) / nr \
-                    + sqrt(2.0 * self.gama * self.kT) * wr(nr) * \
-                        np.random.randn() / sqrt(self.dt)
-                Fm[i, j, :] = fpair / nr * rij
-                Fm[j, i, :] = -fpair / nr * rij
+            dpd_f.compute_force(self.F, self.vir, self.sigma, \
+                self.X, self.V, self.bl, self.ip[1:, 1:], self.box, \
+                self.gama, self.kT, self.dt)
 
-                sigma_pot += np.outer(Fm[i, j, :], rij)
-                self.vir += Fm[i, j, :] @ rij
+
+    def compute_force_cube(self):
+        if self.imp == "numba":
+            self.Fcube = \
+                compute_force_cube_numba(self.X, self.V, self.bl, self.ip, \
+                self.box, self.gama, self.kT, self.dt)
+        elif self.imp == "fortran":
+            self.Fcube = dpd_f.compute_force_cube(self.X, self.V, self.bl, \
+                self.ip, self.box, self.gama, self.kT, self.dt)
     
-        for i in range(self.N):
-            sigma_kin -= np.outer(self.V[i], self.V[i])
-
-        self.sigma = (sigma_kin + sigma_pot) / self.volume
-        self.F = np.sum(Fm, 1)
-
 
 #    def compute_stress_tensor(self):
+#        assert self.Fcube is not None, "Need to compute force cube first."
 #        pass
 #
 #
 #    def compute_pressure(self):
+#        assert self.Fcube is not None, "Need to compute force cube first."
 #        pass
 
-    
+
     # =====
     # Integration
     # =====
@@ -221,14 +214,30 @@ class DPDSim():
         self.V = V2 + 0.5 * self.F * self.dt
 
     
-    def save_frames(self, it):
-        """In the future, modify so that no external function is called"""
-        save_xyzfile("Dump/dump_%05i.xyz" % it, self.bl, self.X)
-        if self.dump_vel:
-            save_xyzfile("Dump/dump_%05i.vel" % it, self.bl, self.V)
-        if self.dump_for:
-            save_xyzfile("Dump/dump_%05i.for" % it, self.bl, self.F)
-   
+    def run(self):
+        self._verify_integrity()
+
+        ti = time.time()
+        self._integrate_numba()
+        tf = time.time()
+
+#        if self.imp == "numba":
+#            print("Integrating with Numba...")
+#            ti = time.time()
+#            self._integrate_numba()
+#            tf = time.time()
+#
+#        elif self.imp == "fortran":
+#            self.X = np.asfortranarray(self.X)
+#            self.V = np.asfortranarray(self.V)
+#            self.F = np.asfortranarray(self.F)
+#            print("Integrating with Fortran...")
+#            ti = time.time()
+#            self._integrate_fortran()
+#            tf = time.time()
+
+        print("Done. Simulation time: %.2f s." % (tf - ti))
+
 
     def _integrate_numba(self):
         """Integrate with Numba code"""
@@ -248,7 +257,7 @@ class DPDSim():
             ke = self.compute_ke()
             pe = self.compute_pe()
             temp = ke / ((3*self.N - 3) / 2.0)
-            pxx, pyy, pzz = np.diag(self.sigma)
+            pxx, pyy, pzz = self.sigma
             p = (pxx + pyy + pzz) / 3.0
 #            p = self.rho * self.kT + self.vir / (3 * self.volume)
 
@@ -265,49 +274,54 @@ class DPDSim():
 
 
     def _integrate_fortran(self):
-        from Fdpd.dpd_f import dpd_f
+#        self.F = dpd_f.compute_force_fun(self.X, self.V, \
+#            self.bl, self.ip, self.box, self.gama, self.kT, self.dt)
 
-        self.F = dpd_f.force_mat(self.X, self.V, self.bl, self.ip, self.box, \
+        if self.F is None:
+            self.F = np.zeros_like(self.X, order="F")
+        if self.vir is None:
+            self.vir = 0.0
+        if self.sigma is None:
+            self.sigma = np.zeros(3, order="F")
+
+        dpd_f.compute_force(self.F, self.vir, self.sigma, \
+            self.X, self.V, self.bl, self.ip, self.box, \
             self.gama, self.kT, self.dt)
 
         # save first frame
         self.save_frames(0)
         
-        print("step temp ke pe")
+        print("step temp ke pe p pxx pyy pzz")
         for it in range(1, self.Nt+1):
             if self.style == "euler":
+#                self._euler_step()
                 _ = dpd_f.euler_step(self.X, self.V, self.bl, self.ip, \
                     self.box, self.gama, self.kT, self.dt)
             elif self.style == "verlet":
+#                self._verlet_step()
                 _ = dpd_f.verlet_step(self.X, self.V, self.F, self.bl, \
                     self.ip, self.box, self.gama, self.kT, self.dt)
 
             # enforce PBC
             self.X = self.X % np.diag(self.box)
  
-            self.KE[it] = self.compute_ke()
-            self.PE[it] = self.compute_pe()
-            self.T[it] = self.KE[it] / ((3 * self.N - 3) / 2.0)
+            ke = self.compute_ke()
+            pe = self.compute_pe()
+            temp = ke / ((3*self.N - 3) / 2.0)
+            pxx, pyy, pzz = self.sigma
+            p = (pxx + pyy + pzz) / 3.0
+#            p = self.rho * self.kT + self.vir / (3 * self.volume)
+
+            self.KE[it], self.PE[it], self.T[it], self.P[it], \
+                self.Pxx[it], self.Pyy[it], self.Pzz[it] = \
+                ke, pe, temp, p, pxx, pyy, pzz
  
             if it % self.thermo == 0:
-                print("%3.i %.5f %.3e %.3e" % (it, self.T[it], self.KE[it], self.PE[it]))
+                print("%3.i %.5f %.3e %.3e %.3e %.3e %.3e %.3e" % \
+                    (it, temp, ke, pe, p, pxx, pyy, pzz))
 
             if it >= self.Neq and it % self.df == 0:
                 self.save_frames(it)
-
-
-    def run(self):
-        self._verify_integrity()
-
-        if self.imp == "numba":
-            print("Integrating with Numba...")
-            self._integrate_numba()
-
-        elif self.imp == "fortran":
-            self.X = np.asfortranarray(self.X)
-            self.V = np.asfortranarray(self.V)
-            print("Integrating with Fortran...")
-            self._integrate_fortran()
 
 
     def _verify_integrity(self):
@@ -315,6 +329,24 @@ class DPDSim():
         assert self.X is not None, "Coordinates not defined."
         assert self.V is not None, "Velocities not defined."
 
+
+    def _initialise_vars(self):
+        if self.F is None:
+            self.F = np.zeros_like(self.X, order="F")
+        if self.vir is None:
+            self.vir = 0.0
+        if self.sigma is None:
+            self.sigma = np.zeros(3, order="F")
+
+
+    def save_frames(self, it):
+        """In the future, modify so that no external function is called"""
+        save_xyzfile("Dump/dump_%05i.xyz" % it, self.bl, self.X)
+        if self.dump_vel:
+            save_xyzfile("Dump/dump_%05i.vel" % it, self.bl, self.V)
+        if self.dump_for:
+            save_xyzfile("Dump/dump_%05i.for" % it, self.bl, self.F)
+   
 
 # =====
 # Helper functions
@@ -404,6 +436,87 @@ def sum_numba(A):
 def wr(nr):
     """Weight function, r>0 is mutual distance"""
     return (1 - nr) if nr < 1.0 else 0.0
+
+
+@jit(nopython=True)
+def compute_force_numba(X, V, bl, ip, box, gamma, kT, dt):
+    N = len(X)
+    F = np.zeros((N, 3))
+    Fcube = np.zeros((N, N, 3))
+    inv_box = np.zeros((3, 3))
+    for i in range(3): inv_box[i, i] = 1.0 / box[i, i]
+    g = np.zeros(3)
+    rij = np.zeros(3)
+    vij = np.zeros(3)
+    a = 0.0
+    nr = 0.0
+    fpair = 0.0
+
+    vir = 0.0
+    sigma = np.zeros(3)
+    volume = np.linalg.det(box)
+
+    for i in range(N):
+        for j in range(i):
+            rij = X[i] - X[j]
+            g = matvecmul(inv_box, rij)
+            g = g - np.round_(g, 0, np.empty_like(g))
+            rij = matvecmul(box, g)
+            vij = V[i] - V[j]
+
+            a = ip[bl[i], bl[j]]
+            nr = norm_numba(rij)
+
+            fc = a * wr(nr)
+            fpair = fc \
+                - gamma * wr(nr)**2 * dot_numba(rij, vij) / nr \
+                + sqrt(2.0*gamma*kT) * wr(nr) * np.random.randn() / sqrt(dt)
+            Fcube[i, j, :] = fpair / nr * rij
+            Fcube[j, i, :] = -Fcube[i, j, :]
+
+            vir += Fcube[i, j, :] @ rij
+            sigma += Fcube[i, j, :] * rij
+
+    for i in range(N):
+        sigma += V[i] * V[i]
+
+    sigma = sigma / volume
+    F = np.sum(Fcube, 1)
+    return F, vir, sigma
+
+
+@jit(nopython=True)
+def compute_force_cube_numba(X, V, bl, ip, box, gamma, kT, dt):
+    N = len(X)
+    Fcube = np.zeros((N, N, 3))
+    inv_box = np.zeros((3, 3))
+    for i in range(3): inv_box[i, i] = 1.0 / box[i, i]
+    g = np.zeros(3)
+    rij = np.zeros(3)
+    vij = np.zeros(3)
+    a = 0.0
+    nr = 0.0
+    fpair = 0.0
+
+    for i in range(N):
+        for j in range(i):
+            rij = X[i] - X[j]
+            g = matvecmul(inv_box, rij)
+            g = g - np.round_(g, 0, np.empty_like(g))
+            rij = matvecmul(box, g)
+            vij = V[i] - V[j]
+
+            a = ip[bl[i], bl[j]]
+            nr = norm_numba(rij)
+
+            fc = a * wr(nr)
+            fpair = fc \
+                - gamma * wr(nr)**2 * dot_numba(rij, vij) / nr \
+                + sqrt(2.0*gamma*kT) * wr(nr) * np.random.randn() / sqrt(dt)
+            Fcube[i, j, :] = fpair / nr * rij
+            Fcube[j, i, :] = -Fcube[i, j, :]
+
+    return Fcube
 
 
 
