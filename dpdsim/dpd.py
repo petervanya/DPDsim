@@ -134,25 +134,13 @@ class DPDSim():
         return KE
 
 
-    @jit #(nopython=True)
     def compute_pe(self):
-        rij = np.zeros(3)
-        g = np.zeros(3)
-        a = 0.0
-        PE = 0.0
-
-        for i in range(self.N):
-            for j in range(3):
-                rij = self.X[i] - self.X[j]
-                g = matvecmul(self.inv_box, rij)
-                g = g - round_numba(g)
-                rij = matvecmul(self.box, g)
-                a = self.ip[self.bl[i], self.bl[j]]
-                PE += a * wr(norm_numba(rij))**2 / 2.0
-        return PE
+        if self.imp == "numba":
+            return compute_pe_numba(self.X, self.bl, self.ip, self.box)
+        elif self.imp == "fortran":
+            return dpd_f.compute_pe(self.X, self.bl, self.ip, self.box)
 
 
-    @jit #(nopython=True)
     def compute_temperature(self):
         return self.compute_ke() / ((3 * self.N - 3) / 2.0)
 
@@ -259,7 +247,6 @@ class DPDSim():
             temp = ke / ((3*self.N - 3) / 2.0)
             pxx, pyy, pzz = self.sigma
             p = (pxx + pyy + pzz) / 3.0
-#            p = self.rho * self.kT + self.vir / (3 * self.volume)
 
             self.KE[it], self.PE[it], self.T[it], self.P[it], \
                 self.Pxx[it], self.Pyy[it], self.Pzz[it] = \
@@ -274,9 +261,6 @@ class DPDSim():
 
 
     def _integrate_fortran(self):
-#        self.F = dpd_f.compute_force_fun(self.X, self.V, \
-#            self.bl, self.ip, self.box, self.gama, self.kT, self.dt)
-
         if self.F is None:
             self.F = np.zeros_like(self.X, order="F")
         if self.vir is None:
@@ -519,6 +503,24 @@ def compute_force_cube_numba(X, V, bl, ip, box, gamma, kT, dt):
     return Fcube
 
 
+@jit(nopython=True)
+def compute_pe_numba(X, bl, ip, box):
+        inv_box = np.zeros((3, 3))
+        for i in range(3): inv_box[i, i] = 1.0 / box[i, i]
+        rij = np.zeros(3)
+        g = np.zeros(3)
+        a = 0.0
+        pe = 0.0
+
+        for i in range(self.N):
+            for j in range(3):
+                rij = self.X[i] - self.X[j]
+                g = matvecmul(self.inv_box, rij)
+                g = g - round_numba(g)
+                rij = matvecmul(self.box, g)
+                a = self.ip[self.bl[i], self.bl[j]]
+                pe += a * wr(norm_numba(rij))**2 / 2.0
+        return pe
 
 
 
