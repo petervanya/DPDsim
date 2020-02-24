@@ -43,22 +43,22 @@ function gaussnum() result (y)
 end function
 
 
-function local_density(X, bl, ntp, rd, box) result (rho)
+function local_density(X, bl, nbt, rd, box) result (rho2)
     ! -----
     ! X: position matrix
     ! bl: vector of bead types
-    ! ntp: number of bead types
+    ! nbt: number of bead types
     ! rd: manybody cutoff, constant w.r.t. bead type
     ! -----
-    integer, intent(in) :: bl(:), ntp
+    integer, intent(in) :: bl(:), nbt
     real(8), intent(in) :: X(:, :), rd, box(3, 3)
     integer :: i, j, N
-    real(8) :: rij(3), g(3), inv_box(3, 3), rho_incr, pi
-    real(8) :: rho(size(X, 1), ntp)
+    real(8) :: rij(3), g(3), inv_box(3, 3), d_rho, pi
+    real(8) :: rho2(size(X, 1), nbt)
     N = size(X, 1)
     g = 0.0
     inv_box = 0.0  ! do not forget this, else will spend hours debugging
-    rho = 0.0
+    rho2 = 0.0
     pi = 4*atan(1.0)
 
     forall (i = 1:3) inv_box(i, i) = 1.0 / box(i, i)
@@ -69,32 +69,32 @@ function local_density(X, bl, ntp, rd, box) result (rho)
             g = matmul(inv_box, rij)
             g = g - nint(g)
             rij = matmul(box, g)
-            rho_incr = wdd(norm2(rij), rd)**2 * 15.0 / (2.0*pi*rd*rd*rd)
-            rho(i, bl(j)) = rho(i, bl(j)) + rho_incr
-            rho(j, bl(i)) = rho(j, bl(i)) + rho_incr
+            d_rho = wdd(norm2(rij), rd)**2 * 15.0 / (2.0*pi*rd*rd*rd)
+            rho2(i, bl(j)) = rho2(i, bl(j)) + d_rho
+            rho2(j, bl(i)) = rho2(j, bl(i)) + d_rho
         enddo
     enddo
 end function
 
 
-function force_mat(X, V, bl, ntp, ip, box, gama, kT, dt, ipb, rd) result (F)
-    integer, intent(in) :: bl(:), ntp
-    real(8), intent(in) :: X(:, :), V(:, :), ip(:, :), ipb(:, :), box(3, 3)
-    real(8), intent(in) :: gama, kT, dt, rd
+function compute_force_fun(X, V, rho2, bl, &
+        ip_a, ip_b, rd, box, gama, kT, dt) result (F)
+    integer, intent(in) :: bl(:)
+    real(8), intent(in) :: X(:, :), V(:, :), rho2(:, :)
+    real(8), intent(in) :: ip_a(:, :), ip_b, rd
+    real(8), intent(in) :: box(3, 3), gama, kT, dt
     real(8) :: g(3), rij(3), vij(3), inv_box(3, 3), fpair, a, b, nr
     real(8) :: rhoi, rhoj
     integer :: i, j, N
-    real(8) :: fm(size(X, 1), size(X, 1), 3), F(size(X, 1), 3)
-    real(8) :: rho(size(X, 1), ntp)
+    real(8) :: fcube(size(X, 1), size(X, 1), 3), F(size(X, 1), 3)
     N = size(X, 1)
-    fm = 0.0
+    fcube = 0.0
     g = 0.0
     fpair = 0.0
     inv_box = 0.0  ! do not forget this, else will spend hours debugging
 
     forall (i = 1:3) inv_box(i, i) = 1.0 / box(i, i)
-
-    rho = local_density(X, bl, ntp, rd, box)
+    ! rho2 = local_density(X, bl, nbt, rd, box)
 
     do i = 1, N
         do j = 1, i-1
@@ -104,32 +104,96 @@ function force_mat(X, V, bl, ntp, ip, box, gama, kT, dt, ipb, rd) result (F)
             rij = matmul(box, g)
             vij = V(i, :) - V(j, :)
 
-            a = ip(bl(i), bl(j))
-            b = ipb(bl(i), bl(j))
+            a = ip_a(bl(i), bl(j))
+            b = ip_b
             nr = norm2(rij)
-            rhoi = rho(i, bl(j))
-            rhoj = rho(j, bl(j))
+            rhoi = rho2(i, bl(j))
+            rhoj = rho2(j, bl(j))
 
             fpair = a * wr(nr) &
                 + b * (rhoi + rhoj) * wdd(nr, rd) &
                 - gama * wr(nr)**2 * dot_product(rij, vij) / nr &
                 + sqrt(2*gama*kT) * wr(nr) * gaussnum() / sqrt(dt)
-            fm(i, j, :) = fpair / nr * rij(:)
-            fm(j, i, :) = -fpair / nr * rij(:)
+            fcube(i, j, :) = fpair / nr * rij(:)
+            fcube(j, i, :) = -fcube(i, j, :)
         enddo
     enddo
-    F = sum(fm, 2)
+    F = sum(fcube, 2)
 end function
 
 
-function tot_pe(X, bl, ip, box) result (pe)
+subroutine compute_force(F, vir, sigma, &
+        X, V, rho2, bl, ip_a, ip_b, rd, box, gama, kT, dt)
+    real(8), intent(inout) :: F(:, :), vir, sigma(3)
     integer, intent(in) :: bl(:)
-    real(8), intent(in) :: X(:, :), ip(:, :), box(3, 3)
+    real(8), intent(in) :: X(:, :), V(:, :), rho2(:, :)
+    real(8), intent(in) :: ip_a(:, :), ip_b, rd
+    real(8), intent(in) :: box(3, 3), gama, kT, dt
+    real(8) :: g(3), rij(3), vij(3), inv_box(3, 3), volume, fpair, a, b, nr
+    real(8) :: rhoi, rhoj
     integer :: i, j, N
-    real(8) :: pe, rij(3), g(3), inv_box(3, 3)
+    real(8) :: fcube(size(X, 1), size(X, 1), 3)
+    N = size(X, 1)
+    fcube = 0.0
+    g = 0.0
+    fpair = 0.0
+    inv_box = 0.0  ! do not forget this, else will spend hours debugging
+    volume = 1.0
+
+    vir = 0.0
+    sigma = 0.0
+    F = 0.0
+
+    forall (i = 1:3) inv_box(i, i) = 1.0 / box(i, i)
+    ! rho = local_density(X, bl, nbt, rd, box)
+    do i = 1, 3
+        volume = volume * box(i, i)
+    enddo
+
+    do i = 1, N
+        do j = 1, i-1
+            rij = X(i, :) - X(j, :)
+            g = matmul(inv_box, rij)
+            g = g - nint(g)
+            rij = matmul(box, g)
+            vij = V(i, :) - V(j, :)
+
+            a = ip_a(bl(i), bl(j))
+            b = ip_b
+            nr = norm2(rij)
+            rhoi = rho2(i, bl(j))
+            rhoj = rho2(j, bl(j))
+
+            fpair = a * wr(nr) &
+                + b * (rhoi + rhoj) * wdd(nr, rd) &
+                - gama * wr(nr)**2 * dot_product(rij, vij) / nr &
+                + sqrt(2*gama*kT) * wr(nr) * gaussnum() / sqrt(dt)
+            fcube(i, j, :) = fpair / nr * rij(:)
+            fcube(j, i, :) = -fcube(i, j, :)
+
+            vir = vir + dot_product(fcube(i, j, :), rij(:))
+            sigma(:) = sigma(:) + fcube(i, j, :) * rij(:)
+        enddo
+    enddo
+
+    do i = 1, N  ! kinetic term of the stress tensor
+        sigma(:) = sigma(:) + V(i, :) * V(i, :)
+    enddo
+
+    sigma = sigma / volume
+    F = sum(fcube, 2)
+end subroutine
+
+
+function tot_pe(X, rho2, bl, ip_a, ip_b, rd, box) result (pe)
+    integer, intent(in) :: bl(:)
+    real(8), intent(in) :: X(:, :), rho2(:, :), ip_a(:, :), ip_b, rd, box(3, 3)
+    integer :: i, j, N
+    real(8) :: pe, rij(3), g(3), inv_box(3, 3), pi
     pe = 0.0
     N = size(X, 1)
-    inv_box = 0.0  ! do not forget this, else will spend hours debugging
+    inv_box = 0.0
+    pi = 4*atan(1.0)
 
     forall (i = 1:3) inv_box(i, i) = 1.0 / box(i, i)
     
@@ -139,8 +203,12 @@ function tot_pe(X, bl, ip, box) result (pe)
             g = matmul(inv_box, rij)
             g = g - nint(g)
             rij = matmul(box, g)
-            pe = pe + ip(bl(i), bl(j)) * wr(norm2(rij))**2 / 2.0
+            pe = pe + ip_a(bl(i), bl(j)) * wr(norm2(rij))**2 / 2.0
         enddo
+    enddo
+
+    do i = 1, n
+        pe = pe + pi*rd**4/30.0 * ip_b * sum(rho2(i, :), 1)**2
     enddo
 end function
 
@@ -192,31 +260,32 @@ function init_vel(N, kT) result(V)
 end function
 
 
-subroutine euler_step(X, V, bl, ntp, ip, box, gama, kT, dt, ipb, rd)
-    real(8), intent(inout) :: X(:, :), V(:, :)
-    real(8), intent(in) :: ip(:, :), box(3, 3), ipb(:, :)
-    integer, intent(in) :: bl(:), ntp
-    real(8), intent(in) :: gama, kT, dt, rd
+subroutine euler_step(X, V, rho2, bl, nbt, ip_a, ip_b, rd, box, gama, kT, dt)
+    real(8), intent(inout) :: X(:, :), V(:, :), rho2(:, :)
+    real(8), intent(in) :: ip_a(:, :), box(3, 3)
+    integer, intent(in) :: bl(:), nbt
+    real(8), intent(in) :: gama, kT, dt, rd, ip_b
     real(8) :: F(size(X, 1), 3)
     F = 0.0
 
-    F = force_mat(X, V, bl, ntp, ip, box, gama, kT, dt, ipb, rd)
+    rho2 = local_density(X, bl, nbt, rd, box)
+    F = compute_force_fun(X, V, rho2, bl, ip_a, ip_b, rd, box, gama, kT, dt)
     V(:, :) = V(:, :) + F(:, :) * dt
     X(:, :) = X(:, :) + V(:, :) * dt
 end subroutine
 
 
-subroutine verlet_step(X, V, F, bl, ntp, ip, box, gama, kT, dt, ipb, rd)
-    real(8), intent(inout) :: X(:, :), V(:, :), F(:, :)
-    real(8), intent(in) :: ip(:, :), box(3, 3), ipb(:, :)
-    integer, intent(in) :: bl(:), ntp
-    real(8), intent(in) :: gama, kT, dt, rd
+subroutine verlet_step(X, V, F, rho2, bl, nbt, ip_a, ip_b, rd, box, gama, kT, dt)
+    real(8), intent(inout) :: X(:, :), V(:, :), F(:, :), rho2(:, :)
+    real(8), intent(in) :: ip_a(:, :), box(3, 3)
+    integer, intent(in) :: bl(:), nbt
+    real(8), intent(in) :: gama, kT, dt, rd, ip_b
     real(8) :: V2(size(X, 1), 3)
     V2 = 0.0
 
     V2(:, :) = V(:, :) + 0.5 * F(:, :) * dt
     X(:, :) = X(:, :) + V2(:, :) * dt
-    F = force_mat(X, V2, bl, ntp, ip, box, gama, kT, dt, ipb, rd)
+    F = compute_force_fun(X, V2, rho2, bl, ip_a, ip_b, rd, box, gama, kT, dt)
     V(:, :) = V2(:, :) + 0.5 * F(:, :) * dt
 end subroutine
 
