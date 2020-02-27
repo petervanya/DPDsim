@@ -17,10 +17,19 @@ main: dpd_io.o dpd_f.o mdpd_f.o main.o
 %.o: %.f90
 	${FC} ${FLAGS} -c $<
 
-f2py: dpd_f.f90 mdpd_f.f90
+f2py: dpd_f.f90 mdpd_f.f90 gmdpd_f.f90
 	${F2PY} -c dpd_f.f90 --fcompiler=${FVENDOR} -m dpd_f
 	${F2PY} -c mdpd_f.f90 --fcompiler=${FVENDOR} -m mdpd_f
+	${F2PY} -c gmdpd_f.f90 --fcompiler=${FVENDOR} -m gmdpd_f
 
+dpdpy: dpd_f.f90
+	${F2PY} -c dpd_f.f90 --fcompiler=${FVENDOR} -m dpd_f
+
+mdpdpy: mdpd_f.f90
+	${F2PY} -c mdpd_f.f90 --fcompiler=${FVENDOR} -m mdpd_f
+
+gmdpdpy: gmdpd_f.f90
+	${F2PY} -c gmdpd_f.f90 --fcompiler=${FVENDOR} -m gmdpd_f
 
 clean:
 	rm -rf *.mod
