@@ -62,14 +62,14 @@ def compute_rdf(sim, bt, N_bins=100, verbose=False):
     return r, rdf
 
 
-@jit#(nopython=True)
+@jit(nopython=True)
 def compute_rdf_1_type(X, r, dr, box):
-    rdf = np.zeros(r.shape)
-    hist = np.zeros(r.shape, dtype=int)
     N = len(X)
+    rdf = np.zeros(r.shape)
+    hist = np.zeros(r.shape) #, dtype=int)
     dX = np.zeros(3)
     g = np.zeros(3)
-    a = 0.0
+    d = 0.0
 
     inv_box = np.linalg.pinv(box)
     volume = np.prod(np.diag(box))
@@ -79,10 +79,10 @@ def compute_rdf_1_type(X, r, dr, box):
         for j in range(i):
             dX = X[i] - X[j]
             g = inv_box.dot(dX)
-            g = g - np.round_(g) # FIX for Numba
-            a = np.sqrt(((box.dot(g))**2).sum())
+            g = g - round_numba(g)
+            d = np.sqrt(((box.dot(g))**2).sum())
 
-            pos = int(a//dr)
+            pos = int(d//dr)
             if pos < len(r):
                 hist[pos] += 1
 
@@ -93,6 +93,16 @@ def compute_rdf_1_type(X, r, dr, box):
 @jit(nopython=True)
 def compute_rdf_2_types(X1, X2, r, dr, box):
     raise NotImplementedError()
+
+
+@jit(nopython=True)
+def round_numba(g):
+    """Does not work with nopython"""
+    N = len(g)
+    gr = np.zeros(N)
+    for i in range(N):
+        gr[i] = round(g[i])
+    return gr
 
 
 
