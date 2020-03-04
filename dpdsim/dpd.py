@@ -5,7 +5,7 @@ from numba import jit, float64, int64
 import os
 import sys
 import time
-from Fdpd.dpd_f import dpd_f
+from .Fdpd.dpd_f import dpd_f
 
 
 class DPDSim():
@@ -107,7 +107,7 @@ class DPDSim():
             self.ip[1:, 1:] = np.array([[a, a+da], [a+da, a]])
             
 
-    def read_particle_inputs(X, V, bl, ip, V=None):
+    def read_particle_inputs(X, bl, ip, V=None):
         """Read pre-created particle inputs"""
         self.X = X
         if V is None:
@@ -131,7 +131,8 @@ class DPDSim():
     # =====
     @jit#(nopython=True)
     def compute_ke(self):
-#        return (V * V).sum() / 2.0
+        self._verify_integrity()
+
         KE = 0.0
         for i in range(len(self.V)):
             for j in range(3):
@@ -140,10 +141,12 @@ class DPDSim():
 
 
     def compute_pe(self):
+        self._verify_integrity()
+
         if self.imp == "numba":
             return compute_pe_numba(self.X, self.bl, self.ip, self.box)
         elif self.imp == "fortran":
-            return dpd_f.compute_pe(self.X, self.bl, self.ip, self.box)
+            return dpd_f.compute_pe(self.X, self.bl, self.ip[1:, 1:], self.box)
 
 
     def compute_temperature(self):
@@ -153,6 +156,8 @@ class DPDSim():
     @jit
     def compute_force(self):
         """Compute force and stress tensor"""
+        self._verify_integrity()
+
         if self.imp == "numba":
             self.F, self.vir, self.sigma = \
                 compute_force_numba(self.X, self.V, self.bl, self.ip, \
@@ -172,6 +177,8 @@ class DPDSim():
 
 
     def compute_force_cube(self):
+        self._verify_integrity()
+
         if self.imp == "numba":
             self.Fcube = \
                 compute_force_cube_numba(self.X, self.V, self.bl, self.ip, \
@@ -510,6 +517,7 @@ def compute_force_cube_numba(X, V, bl, ip, box, gamma, kT, dt):
 
 @jit(nopython=True)
 def compute_pe_numba(X, bl, ip, box):
+        N = len(X)
         inv_box = np.zeros((3, 3))
         for i in range(3): inv_box[i, i] = 1.0 / box[i, i]
         rij = np.zeros(3)
@@ -517,13 +525,13 @@ def compute_pe_numba(X, bl, ip, box):
         a = 0.0
         pe = 0.0
 
-        for i in range(self.N):
-            for j in range(3):
-                rij = self.X[i] - self.X[j]
-                g = matvecmul(self.inv_box, rij)
+        for i in range(N):
+            for j in range(i):
+                rij = X[i] - X[j]
+                g = matvecmul(inv_box, rij)
                 g = g - round_numba(g)
-                rij = matvecmul(self.box, g)
-                a = self.ip[self.bl[i], self.bl[j]]
+                rij = matvecmul(box, g)
+                a = ip[bl[i], bl[j]]
                 pe += a * wr(norm_numba(rij))**2 / 2.0
         return pe
 

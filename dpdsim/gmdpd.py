@@ -5,7 +5,7 @@ from numba import jit, float64, int64
 import os
 import sys
 import time
-from Fdpd.gmdpd_f import gmdpd_f
+from .Fdpd.gmdpd_f import gmdpd_f
 
 
 class GMDPDSim():
@@ -135,7 +135,7 @@ class GMDPDSim():
 
         self.bl = bl
         self.Nbt = len(set(self.bl))
-        self.rho2 = np.zeros((len(self.X), self.Nbt+1)) #self.compute_local_density()
+        self.rho2 = np.zeros((len(self.X), self.Nbt+1))
         self.ip_A = ip_A
         self.ip_B = ip_B
         self.Rd = Rd
@@ -165,8 +165,8 @@ class GMDPDSim():
             return pe_numba(self.X, self.rho2, self.bl, \
                 self.ip_A, self.ip_B, self.Rd, self.box)
         elif self.imp == "fortran":
-            return gmdpd_f.tot_pe(self.X, self.rho2, self.bl, \
-                self.ip_A[1:, 1:], self.ip_B, self.Rd[1:, 1:], self.box)
+            return gmdpd_f.compute_pe(self.X, self.rho2, self.bl, \
+                self.ip_A[1:, 1:], self.ip_B, self.box)
 
 
     def compute_temperature(self):

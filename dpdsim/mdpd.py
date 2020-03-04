@@ -5,7 +5,7 @@ from numba import jit, float64, int64
 import os
 import sys
 import time
-from Fdpd.mdpd_f import mdpd_f
+from .Fdpd.mdpd_f import mdpd_f
 
 
 class MDPDSim():
@@ -147,6 +147,7 @@ class MDPDSim():
     # =====
     @jit #(nopython=True)
     def compute_ke(self):
+        self._verify_integrity()
         KE = 0.0
         for i in range(len(self.V)):
             for j in range(3):
@@ -155,12 +156,14 @@ class MDPDSim():
 
 
     def compute_pe(self):
+        self._verify_integrity()
+
         if self.imp == "numba":
             return pe_numba(self.X, self.rho2, self.bl, \
                 self.ip_A, self.ip_B, self.rd, self.box)
         elif self.imp == "fortran":
-            return mdpd_f.tot_pe(self.X, self.rho2, self.bl, \
-                self.ip_A, self.ip_B, self.rd, self.box)
+            return mdpd_f.compute_pe(self.X, self.rho2, self.bl, \
+                self.ip_A[1:, 1:], self.ip_B, self.rd, self.box)
 
 
     def compute_temperature(self):
@@ -168,6 +171,7 @@ class MDPDSim():
 
 
     def compute_local_density(self):
+        self._verify_integrity()
         if self.imp == "numba":
             self.rho2 = local_density_numba(\
                 self.X, self.bl, self.Nbt, self.rd, self.box)
