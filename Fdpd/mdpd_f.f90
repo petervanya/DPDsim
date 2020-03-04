@@ -185,6 +185,49 @@ subroutine compute_force(F, vir, sigma, &
 end subroutine
 
 
+function compute_force_cube(X, V, rho2, bl, &
+        ip_a, ip_b, rd, box, gama, kT, dt) result (fcube)
+    integer, intent(in) :: bl(:)
+    real(8), intent(in) :: X(:, :), V(:, :), rho2(:, :)
+    real(8), intent(in) :: ip_a(:, :), ip_b, rd
+    real(8), intent(in) :: box(3, 3), gama, kT, dt
+    real(8) :: g(3), rij(3), vij(3), inv_box(3, 3), fpair, a, b, nr
+    real(8) :: rhoi, rhoj
+    integer :: i, j, N
+    real(8) :: fcube(size(X, 1), size(X, 1), 3)
+    N = size(X, 1)
+    fcube = 0.0
+    g = 0.0
+    fpair = 0.0
+    inv_box = 0.0
+
+    forall (i = 1:3) inv_box(i, i) = 1.0 / box(i, i)
+
+    do i = 1, N
+        do j = 1, i-1
+            rij = X(i, :) - X(j, :)
+            g = matmul(inv_box, rij)
+            g = g - nint(g)
+            rij = matmul(box, g)
+            vij = V(i, :) - V(j, :)
+
+            a = ip_a(bl(i), bl(j))
+            b = ip_b
+            nr = norm2(rij)
+            rhoi = rho2(i, bl(j))
+            rhoj = rho2(j, bl(j))
+
+            fpair = a * wr(nr) &
+                + b * (rhoi + rhoj) * wdd(nr, rd) &
+                - gama * wr(nr)**2 * dot_product(rij, vij) / nr &
+                + sqrt(2*gama*kT) * wr(nr) * gaussnum() / sqrt(dt)
+            fcube(i, j, :) = fpair / nr * rij(:)
+            fcube(j, i, :) = -fcube(i, j, :)
+        enddo
+    enddo
+end function
+
+
 function tot_pe(X, rho2, bl, ip_a, ip_b, rd, box) result (pe)
     integer, intent(in) :: bl(:)
     real(8), intent(in) :: X(:, :), rho2(:, :), ip_a(:, :), ip_b, rd, box(3, 3)
