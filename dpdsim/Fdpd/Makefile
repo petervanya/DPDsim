@@ -23,13 +23,13 @@ f2py: dpd_f.f90 mdpd_f.f90 gmdpd_f.f90
 	${F2PY} -c gmdpd_f.f90 --fcompiler=${FVENDOR} -m gmdpd_f
 
 dpdpy: dpd_f.f90
-	${F2PY} -c dpd_f.f90 --fcompiler=${FVENDOR} -m dpd_f
+	python -m numpy.f2py -c -m dpd_f $<
 
 mdpdpy: mdpd_f.f90
-	${F2PY} -c mdpd_f.f90 --fcompiler=${FVENDOR} -m mdpd_f
+	python -m numpy.f2py -c -m mdpd_f $<
 
 gmdpdpy: gmdpd_f.f90
-	${F2PY} -c gmdpd_f.f90 --fcompiler=${FVENDOR} -m gmdpd_f
+	python -m numpy.f2py -c -m gmdpd_f $<
 
 clean:
 	rm -rf *.mod

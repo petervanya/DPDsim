@@ -243,10 +243,10 @@ function compute_force_cube(X, V, rho2, bl, &
 end function
 
 
-function tot_pe(X, rho2, bl, ip_a, ip_b, rd, box) result (pe)
+function compute_pe(X, rho2, bl, ip_a, ip_b, box) result (pe)
     integer, intent(in) :: bl(:)
     real(8), intent(in) :: X(:, :), rho2(:, :)
-    real(8), intent(in) :: ip_a(:, :), ip_b, rd(:, :), box(3, 3)
+    real(8), intent(in) :: ip_a(:, :), ip_b, box(3, 3)
     integer :: i, j, N
     real(8) :: pe, rij(3), g(3), inv_box(3, 3), pi, rdij
     pe = 0.0
@@ -273,7 +273,7 @@ function tot_pe(X, rho2, bl, ip_a, ip_b, rd, box) result (pe)
 end function
 
 
-function tot_ke(V) result (ke)
+function compute_ke(V) result (ke)
     real(8), intent(in) :: V(:, :)
     real(8) :: ke
     integer :: i, j, N
@@ -345,6 +345,7 @@ subroutine verlet_step(X, V, F, rho2, bl, nbt, ip_a, ip_b, rd, box, gama, kT, dt
 
     V2(:, :) = V(:, :) + 0.5 * F(:, :) * dt
     X(:, :) = X(:, :) + V2(:, :) * dt
+    rho2 = local_density(X, bl, nbt, rd, box)
     F = compute_force_fun(X, V2, rho2, bl, ip_a, ip_b, rd, box, gama, kT, dt)
     V(:, :) = V2(:, :) + 0.5 * F(:, :) * dt
 end subroutine
