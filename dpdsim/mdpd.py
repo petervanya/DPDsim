@@ -101,7 +101,7 @@ class MDPDSim():
         if kind == "pure":
             self.bl = np.ones(self.N).astype(int)
             self.Nbt = len(set(self.bl))
-            self.rho2 = np.zeros((len(self.X), self.Nbt+1)) #self.compute_local_density()
+            self.rho2 = np.zeros((len(self.X), self.Nbt+1))
             self.ip_A = np.zeros((2, 2))
             self.ip_A[1, 1] = A
             self.ip_B = B
@@ -118,13 +118,18 @@ class MDPDSim():
             self.rd = rd
             
 
-    def read_particle_inputs(X, V, bl, ip_A, ip_B, rd):
+    def read_particle_inputs(self, X, bl, ip_A, ip_B, rd, V=None):
         """Read pre-created particle inputs"""
         self.X = X
-        self.V = V
+        if V is None:
+            self.V = np.random.randn(self.N, 3) * sqrt(self.kT)
+            self.V -= np.sum(self.V, 0) / self.N
+        else:
+            self.V = V
+
         self.bl = bl
         self.Nbt = len(set(self.bl))
-        self.rho2 = np.zeros((len(self.X), self.Nbt+1)) #self.compute_local_density()
+        self.rho2 = np.zeros((len(self.X), self.Nbt+1))
         self.ip_A = ip_A
         self.ip_B = ip_B
         self.rd = rd
@@ -133,8 +138,7 @@ class MDPDSim():
             "Length of X not same as number of particles."
         assert self.V.shape == (self.N, 3), \
             "Length of V not same as number of particles."
-        assert len(set(self.bl)) == len(ip_A) + 1 == \
-            len(ip_B) + 1 == len(rd) + 1, \
+        assert len(set(self.bl)) == len(ip_A) - 1, \
             "Number of interaction parameters not same as number of species."
 
 
@@ -207,8 +211,9 @@ class MDPDSim():
                 self.ip_A, self.ip_B, self.rd, \
                 self.box, self.gama, self.kT, self.dt)
         elif self.imp == "fortran":
-            self.Fcube = mdpd_f.compute_force_cube(self.X, self.V, self.rho2, self.bl, \
-                self.ip_A, self.ip_B, self.rd, \
+            self.Fcube = mdpd_f.compute_force_cube(\
+                self.X, self.V, self.rho2, self.bl, \
+                self.ip_A[1:, 1:], self.ip_B, self.rd, \
                 self.box, self.gama, self.kT, self.dt)
     
 
@@ -470,12 +475,12 @@ def force_cube_numba(X, V, rho2, bl, ip_A, ip_B, rd, box, gamma, kT, dt):
             vij = V[i] - V[j]
 
             nr = norm_numba(rij)
-            A = ip[bl[i], bl[j]]
+            A = ip_A[bl[i], bl[j]]
             rhoi = rho2[i, bl[j]]
             rhoj = rho2[j, bl[i]]
 
             fpair = A * wr(nr) \
-                + ip_B * (rhoi + rhoj) * wd(nr / rd) \
+                + ip_B * (rhoi + rhoj) * wr(nr / rd) \
                 - gamma * wr(nr)**2 * dot_numba(rij, vij) / nr \
                 + sqrt(2.0*gamma*kT) * wr(nr) * np.random.randn() / sqrt(dt)
             Fcube[i, j, :] = fpair / nr * rij

@@ -107,17 +107,22 @@ class DPDSim():
             self.ip[1:, 1:] = np.array([[a, a+da], [a+da, a]])
             
 
-    def read_particle_inputs(X, V, bl, ip):
+    def read_particle_inputs(X, V, bl, ip, V=None):
         """Read pre-created particle inputs"""
         self.X = X
-        self.V = V
+        if V is None:
+            self.V = np.random.randn(self.N, 3) * sqrt(self.kT)
+            self.V -= np.sum(self.V, 0) / self.N
+        else:
+            self.V = V
+
         self.bl = bl
         self.ip = ip
         assert self.X.shape == (self.N, 3), \
             "Length of X not same as number of particles."
         assert self.V.shape == (self.N, 3), \
             "Length of V not same as number of particles."
-        assert len(set(self.bl)) == len(ip), \
+        assert len(set(self.bl)) == len(ip) - 1, \
             "Number of interaction parameters not same as number of species."
 
 
