@@ -120,7 +120,7 @@ subroutine compute_force(F, vir, sigma, X, V, bl, ip, box, gama, kT, dt)
         sigma(:) = sigma(:) + V(i, :) * V(i, :)
     enddo
 
-    print *, "Virial = ", vir ! PASSES ZERO TO PYTHON!
+!    print *, "Virial = ", vir ! PASSES ZERO TO PYTHON!
     sigma = sigma / volume
     F = sum(fcube, 2)
 end subroutine
