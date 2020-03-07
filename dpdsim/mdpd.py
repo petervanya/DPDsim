@@ -254,6 +254,7 @@ class MDPDSim():
         self._integrate_numba()
         tf = time.time()
 
+        self._dump_observables()
         print("Done. Simulation time: %.2f s." % (tf - ti))
 
 
@@ -261,6 +262,16 @@ class MDPDSim():
         """Integrate with Numba code"""
         self.compute_force()
         self.save_frames(0)
+
+        ke = self.compute_ke()
+        pe = self.compute_pe()
+        temp = ke / ((3*self.N - 3) / 2.0)
+        pxx, pyy, pzz = self.sigma
+        p = (pxx + pyy + pzz) / 3.0
+
+        self.KE[0], self.PE[0], self.T[0], self.P[0], \
+            self.Pxx[0], self.Pyy[0], self.Pzz[0] = \
+            ke, pe, temp, p, pxx, pyy, pzz
 
         print("step temp ke pe p pxx pyy pzz")
         for it in range(1, self.Nt+1):
@@ -313,6 +324,15 @@ class MDPDSim():
         if self.dump_for:
             save_xyzfile("Dump/dump_%05i.for" % it, self.bl, self.F)
    
+
+    def _dump_observables(self):
+        """Save temperature, energies and pressure tensor
+        components to a file"""
+        import pandas as pd
+        df_obs = pd.DataFrame({"temp": self.T, "ke": self.KE, "pe": self.PE, \
+            "p": self.P, "pxx": self.Pxx, "pyy": self.Pyy, "pzz": self.Pzz})
+        df_obs.to_csv("Dump/correl.csv")
+
 
 # =====
 # Helper functions
