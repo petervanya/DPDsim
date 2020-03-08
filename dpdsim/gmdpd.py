@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import numpy as np
 from numpy import sqrt, pi
-from numba import jit, float64, int64
+from numba import jit, int64, float64
 import os
 import sys
 import time
@@ -9,7 +9,7 @@ from .Fdpd.gmdpd_f import gmdpd_f
 
 
 class GMDPDSim():
-    """Class to perform a dissipative particle dynamics simulation"""
+    """An object to perform a generalised many-body DPD simulation"""
     def __init__(self,
                  N=375,
                  L=5,
@@ -108,6 +108,10 @@ class GMDPDSim():
             self.ip_B = B
             self.Rd = np.zeros((2, 2))
             self.Rd[1, 1] = rd
+            self.ip_N_wrap = np.zeros(2)
+            self.ip_N_wrap[1] = 2.0
+            self.ip_N_rho = np.zeros((2, 2))
+            self.ip_N_rho[1, 1] = 2.0
         
         elif kind == "binary":
             N1 = int(f * self.N)
@@ -124,7 +128,8 @@ class GMDPDSim():
                 (self.Rd[1, 1] + self.Rd[2, 2]) / 2.0
             
 
-    def read_particle_inputs(self, X, bl, ip_A, ip_B, Rd, V=None):
+    def read_particle_inputs(self, X, bl, ip_A, ip_B, Rd, \
+        ip_N_wrap, ip_N_rho, V=None):
         """Read pre-created particle inputs"""
         self.X = X
         if V is None:
@@ -139,12 +144,15 @@ class GMDPDSim():
         self.ip_A = ip_A
         self.ip_B = ip_B
         self.Rd = Rd
+        self.ip_N_rho = ip_N_rho
+        self.ip_N_wrap = ip_N_wrap
 
         assert self.X.shape == (self.N, 3), \
             "Length of X not same as number of particles."
         assert self.V.shape == (self.N, 3), \
             "Length of V not same as number of particles."
-        assert len(set(self.bl)) == len(ip_A) - 1 == len(Rd) - 1, \
+        assert len(set(self.bl)) == len(ip_A) - 1 == len(Rd) - 1 \
+            == len(ip_N_rho) - 1 == len(ip_N_wrap) - 1, \
             "Number of interaction parameters not same as number of species."
 
 
@@ -163,10 +171,10 @@ class GMDPDSim():
     def compute_pe(self):
         if self.imp == "numba":
             return pe_numba(self.X, self.rho2, self.bl, \
-                self.ip_A, self.ip_B, self.Rd, self.box)
+                self.ip_A, self.ip_B, self.ip_N_wrap, self.box)
         elif self.imp == "fortran":
             return gmdpd_f.compute_pe(self.X, self.rho2, self.bl, \
-                self.ip_A[1:, 1:], self.ip_B, self.box)
+                self.ip_A[1:, 1:], self.ip_B, self.ip_N_wrap[1:], self.box)
 
 
     def compute_temperature(self):
@@ -176,25 +184,24 @@ class GMDPDSim():
     def compute_local_density(self):
         if self.imp == "numba":
             self.rho2 = local_density_numba(\
-                self.X, self.bl, self.Nbt, self.Rd, self.box)
+                self.X, self.bl, self.Nbt, self.Rd, self.ip_N_rho, self.box)
 
         elif self.imp == "fortran":
             if self.rho2 is None:
                 self.rho2 = np.zeros((N, len(set(self.bl))+1), order="F")
             self.rho2 = gmdpd_f.local_density(self.X, self.bl, self.Nbt, \
-                self.Rd[1:, 1:], self.box)
+                self.Rd[1:, 1:], self.ip_N_rho[1:, 1:], self.box)
 
 
-    @jit
     def compute_force(self):
         """Compute force and stress tensor"""
         self.compute_local_density()
 
         if self.imp == "numba":
-            self.F, self.vir, self.sigma = \
-                force_numba(self.X, self.V, self.rho2, self.bl, \
-                    self.ip_A, self.ip_B, self.Rd, \
-                    self.box, self.gama, self.kT, self.dt)
+            self.F, self.vir, self.sigma = force_numba(\
+                self.X, self.V, self.rho2, self.bl, self.ip_A, \
+                self.ip_B, self.Rd, self.ip_N_wrap, self.ip_N_rho, \
+                self.box, self.gama, self.kT, self.dt)
 
         elif self.imp == "fortran":
             if self.F is None:
@@ -207,19 +214,21 @@ class GMDPDSim():
             gmdpd_f.compute_force(self.F, self.vir, self.sigma, \
                 self.X, self.V, self.rho2, self.bl, \
                 self.ip_A[1:, 1:], self.ip_B, self.Rd[1:, 1:], \
+                self.ip_N_wrap[1:], self.ip_N_rho[1:, 1:], \
                 self.box, self.gama, self.kT, self.dt)
 
 
     def compute_force_cube(self):
         if self.imp == "numba":
-            self.Fcube = \
-                force_cube_numba(self.X, self.V, self.rho2, self.bl, \
-                self.ip_A, self.ip_B, self.Rd, \
+            self.Fcube = force_cube_numba(\
+                self.X, self.V, self.rho2, self.bl, \
+                self.ip_A, self.ip_B, self.Rd, self.ip_N_wrap, self.ip_N_rho, \
                 self.box, self.gama, self.kT, self.dt)
         elif self.imp == "fortran":
             self.Fcube = gmdpd_f.compute_force_cube(\
                 self.X, self.V, self.rho2, self.bl, \
                 self.ip_A[1:, 1:], self.ip_B, self.Rd[1:, 1:], \
+                self.ip_N_wrap[1:], self.ip_N_rho[1:, 1:], \
                 self.box, self.gama, self.kT, self.dt)
     
 
@@ -427,7 +436,8 @@ def wr(nr):
 
 
 @jit(nopython=True)
-def force_numba(X, V, rho2, bl, ip_A, ip_B, Rd, box, gamma, kT, dt):
+def force_numba(X, V, rho2, bl, ip_A, ip_B, Rd, ip_N_wrap, ip_N_rho, \
+    box, gamma, kT, dt):
     N = len(X)
     F = np.zeros((N, 3))
     Fcube = np.zeros((N, N, 3))
@@ -438,9 +448,13 @@ def force_numba(X, V, rho2, bl, ip_A, ip_B, Rd, box, gamma, kT, dt):
     vij = np.zeros(3)
     A = 0.0
     nr = 0.0
-    fpair = 0.0
     rhoi = 0.0
     rhoj = 0.0
+    nwi = 0.0
+    nwj = 0.0
+    nrho = 0.0
+    nrm = 0.0
+    fpair = 0.0
 
     vir = 0.0
     sigma = np.zeros(3)
@@ -450,7 +464,7 @@ def force_numba(X, V, rho2, bl, ip_A, ip_B, Rd, box, gamma, kT, dt):
         for j in range(i):
             rij = X[i] - X[j]
             g = matvecmul(inv_box, rij)
-            g = g - round_numba(g) #np.round_(g, 0, np.empty_like(g))
+            g = g - round_numba(g)
             rij = matvecmul(box, g)
             vij = V[i] - V[j]
 
@@ -459,10 +473,14 @@ def force_numba(X, V, rho2, bl, ip_A, ip_B, Rd, box, gamma, kT, dt):
             rhoi = rho2[i, bl[j]]
             rhoj = rho2[j, bl[i]]
             rd = Rd[bl[i], bl[j]]
-            nc = 30.0 / (2.0*pi*rd**4)
+            nwi = ip_N_wrap[bl[i]]
+            nwj = ip_N_wrap[bl[j]]
+            nrho = ip_N_rho[bl[i], bl[j]]
+            nrm = (nrho+1.0)*(nrho+2.0)*(nrho+3.0) / (8.0*pi*rd**3)
 
             fpair = A * wr(nr) \
-                + ip_B * (rhoi + rhoj) * nc * wr(nr / rd) \
+                + ip_B * (rhoi**(nwi-1) + rhoj**(nwj-1)) \
+                    * nrm * wr(nr/rd)**(nrho-1) * nrho / rd \
                 - gamma * wr(nr)**2 * dot_numba(rij, vij) / nr \
                 + sqrt(2.0*gamma*kT) * wr(nr) * np.random.randn() / sqrt(dt)
             Fcube[i, j, :] = fpair / nr * rij
@@ -480,7 +498,8 @@ def force_numba(X, V, rho2, bl, ip_A, ip_B, Rd, box, gamma, kT, dt):
 
 
 @jit(nopython=True)
-def force_cube_numba(X, V, rho2, bl, ip_A, ip_B, Rd, box, gamma, kT, dt):
+def force_cube_numba(X, V, rho2, bl, ip_A, ip_B, Rd, ip_N_wrap, ip_N_rho, \
+    box, gamma, kT, dt):
     N = len(X)
     Fcube = np.zeros((N, N, 3))
     inv_box = np.zeros((3, 3))
@@ -490,15 +509,19 @@ def force_cube_numba(X, V, rho2, bl, ip_A, ip_B, Rd, box, gamma, kT, dt):
     vij = np.zeros(3)
     A = 0.0
     nr = 0.0
-    fpair = 0.0
     rhoi = 0.0
     rhoj = 0.0
+    nwi = 0.0
+    nwj = 0.0
+    nrho = 0.0
+    nrm = 0.0
+    fpair = 0.0
 
     for i in range(N):
         for j in range(i):
             rij = X[i] - X[j]
             g = matvecmul(inv_box, rij)
-            g = g - np.round_(g, 0, np.empty_like(g))
+            g = g - round_numba(g) #np.round_(g, 0, np.empty_like(g))
             rij = matvecmul(box, g)
             vij = V[i] - V[j]
 
@@ -506,10 +529,15 @@ def force_cube_numba(X, V, rho2, bl, ip_A, ip_B, Rd, box, gamma, kT, dt):
             A = ip_A[bl[i], bl[j]]
             rhoi = rho2[i, bl[j]]
             rhoj = rho2[j, bl[i]]
-            nc = 30.0 / (2.0*pi*Rd[bl[i], bl[j]]**4)
+            rd = Rd[bl[i], bl[j]]
+            nwi = ip_N_wrap[bl[i]]
+            nwj = ip_N_wrap[bl[j]]
+            nrho = ip_N_rho[bl[i], bl[j]]
+            nrm = (nrho+1.0)*(nrho+2.0)*(nrho+3.0) / (8.0*pi*rd**3)
 
             fpair = A * wr(nr) \
-                + ip_B * (rhoi + rhoj) * nc * wr(nr / Rd[bl[i], bl[j]]) \
+                + ip_B * (rhoi**(nwi-1) + rhoj**(nwj-1)) \
+                    * nrm * wr(nr/rd)**(nrho-1) * nrho / rd \
                 - gamma * wr(nr)**2 * dot_numba(rij, vij) / nr \
                 + sqrt(2.0*gamma*kT) * wr(nr) * np.random.randn() / sqrt(dt)
             Fcube[i, j, :] = fpair / nr * rij
@@ -519,7 +547,7 @@ def force_cube_numba(X, V, rho2, bl, ip_A, ip_B, Rd, box, gamma, kT, dt):
 
 
 @jit(nopython=True)
-def pe_numba(X, rho2, bl, ip_A, ip_B, rd, box):
+def pe_numba(X, rho2, bl, ip_A, ip_B, ip_N_wrap, box):
         N = len(X)
         inv_box = np.zeros((3, 3))
         for i in range(3): inv_box[i, i] = 1.0 / box[i, i]
@@ -527,6 +555,7 @@ def pe_numba(X, rho2, bl, ip_A, ip_B, rd, box):
         g = np.zeros(3)
         nr = 0.0
         pe = 0.0
+        nwi = 0.0
 
         # standard part
         for i in range(N):
@@ -539,11 +568,12 @@ def pe_numba(X, rho2, bl, ip_A, ip_B, rd, box):
 
         # many-body part
         for i in range(N):
-            pe += ip_B/2.0 * np.sum(rho2[i])**2
+            nwi = ip_N_wrap[bl[i]]
+            pe += ip_B * np.sum(rho2[i])**nwi / nwi
         return pe
 
 
-def local_density_numba(X, bl, Nbt, Rd, box):
+def local_density_numba(X, bl, Nbt, Rd, ip_N_rho, box):
         N = len(X)
         inv_box = np.zeros((3, 3))
         for i in range(3): inv_box[i, i] = 1.0 / box[i, i]
@@ -551,6 +581,8 @@ def local_density_numba(X, bl, Nbt, Rd, box):
         g = np.zeros(3)
         nr = 0.0
         rd = 0.0
+        nrho = 0.0
+        nrm = 0.0
         d_rho = 0.0
         rho = np.zeros((N, Nbt+1))
 
@@ -562,7 +594,10 @@ def local_density_numba(X, bl, Nbt, Rd, box):
                 nr = norm_numba(matvecmul(box, g))
 
                 rd = Rd[bl[i], bl[j]]
-                d_rho = wr(nr / rd)**2 * 15.0 / (2.0*pi*rd**3)
+                nrho = ip_N_rho[bl[i], bl[j]]
+                nrm = (nrho+1.0)*(nrho+2.0)*(nrho+3.0) / (8.0*pi*rd**3)
+
+                d_rho = nrm * wr(nr / rd)**nrho
                 rho[i, bl[j]] += d_rho
                 rho[j, bl[i]] += d_rho
         return rho

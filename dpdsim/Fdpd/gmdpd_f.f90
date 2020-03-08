@@ -43,24 +43,26 @@ function gaussnum() result (y)
 end function
 
 
-function local_density(X, bl, nbt, rd, box) result (rho2)
+function local_density(X, bl, nbt, ip_rd, n_rho, box) result (rho2)
     ! -----
     ! X: position matrix
     ! bl: vector of bead types
     ! nbt: number of bead types
-    ! rd: manybody cutoff, constant w.r.t. bead type
+    ! ip_rd: manybody cutoff, constant w.r.t. bead type
     ! -----
     integer, intent(in) :: bl(:), nbt
-    real(8), intent(in) :: X(:, :), rd(:, :), box(3, 3)
+    real(8), intent(in) :: X(:, :), ip_rd(:, :), n_rho(:, :), box(3, 3)
     integer :: i, j, N
-    real(8) :: rij(3), g(3), inv_box(3, 3), d_rho, pi, rdij
+    real(8) :: rij(3), g(3), inv_box(3, 3), d_rho, pi, rd, nrm, nri
     real(8) :: rho2(size(X, 1), nbt)
     N = size(X, 1)
     g = 0.0
     inv_box = 0.0
     rho2 = 0.0
     pi = 4.0 * atan(1.0)
-    rdij = 0.0
+    rd = 0.0
+    nrm = 0.0
+    nri = 0.0
 
     forall (i = 1:3) inv_box(i, i) = 1.0 / box(i, i)
 
@@ -70,8 +72,12 @@ function local_density(X, bl, nbt, rd, box) result (rho2)
             g = matmul(inv_box, rij)
             g = g - nint(g)
             rij = matmul(box, g)
-            rdij = rd(bl(i), bl(j))
-            d_rho = wdd(norm2(rij), rdij)**2 * 15.0 / (2.0*pi*rdij*rdij*rdij)
+
+            rd = ip_rd(bl(i), bl(j))
+            nri = n_rho(bl(i), bl(j))
+            nrm = (nri+1.0)*(nri+2.0)*(nri+3.0) / (8.0*pi*rd*rd*rd)
+
+            d_rho = nrm * wdd(norm2(rij), rd)**nri
             rho2(i, bl(j)) = rho2(i, bl(j)) + d_rho
             rho2(j, bl(i)) = rho2(j, bl(i)) + d_rho
         enddo
@@ -80,13 +86,13 @@ end function
 
 
 function compute_force_fun(X, V, rho2, bl, &
-        ip_a, ip_b, rd, box, gama, kT, dt) result (F)
+        ip_a, ip_b, ip_rd, n_wrap, n_rho, box, gama, kT, dt) result (F)
     integer, intent(in) :: bl(:)
     real(8), intent(in) :: X(:, :), V(:, :), rho2(:, :)
-    real(8), intent(in) :: ip_a(:, :), ip_b, rd(:, :)
+    real(8), intent(in) :: ip_a(:, :), ip_b, ip_rd(:, :), n_wrap(:), n_rho(:, :)
     real(8), intent(in) :: box(3, 3), gama, kT, dt
-    real(8) :: g(3), rij(3), vij(3), inv_box(3, 3), fpair, a, b, nr
-    real(8) :: rhoi, rhoj, rdij, nc, pi
+    real(8) :: g(3), rij(3), vij(3), inv_box(3, 3), fpair, a, nr
+    real(8) :: rhoi, rhoj, rd, nrm, pi, nwi, nwj, nri
     integer :: i, j, N
     real(8) :: fcube(size(X, 1), size(X, 1), 3), F(size(X, 1), 3)
     N = size(X, 1)
@@ -94,8 +100,8 @@ function compute_force_fun(X, V, rho2, bl, &
     g = 0.0
     fpair = 0.0
     inv_box = 0.0
-    rdij = 0.0
-    nc = 0.0
+    rd = 0.0
+    nrm = 0.0
     pi = 4.0 * atan(1.0)
 
     forall (i = 1:3) inv_box(i, i) = 1.0 / box(i, i)
@@ -108,16 +114,19 @@ function compute_force_fun(X, V, rho2, bl, &
             rij = matmul(box, g)
             vij = V(i, :) - V(j, :)
 
-            a = ip_a(bl(i), bl(j))
-            b = ip_b
             nr = norm2(rij)
+            a = ip_a(bl(i), bl(j))
+            rd = ip_rd(bl(i), bl(j))
+            nwi = n_wrap(bl(i))
+            nwj = n_wrap(bl(j))
+            nri = n_rho(bl(i), bl(j))
+            nrm = (nri+1.0)*(nri+2.0)*(nri+3.0) / (8.0*pi*rd*rd*rd)
             rhoi = rho2(i, bl(j))
             rhoj = rho2(j, bl(j))
-            rdij = rd(bl(i), bl(j))
-            nc = 30.0 / (2.0*pi*rdij*rdij*rdij*rdij)
 
             fpair = a * wr(nr) &
-                + b * nc * (rhoi + rhoj) * wdd(nr, rdij) &
+                + ip_b * (rhoi**(nwi-1.0) + rhoj**(nwj-1.0)) &
+                    * nrm * wdd(nr, rd)**(nri-1.0) * nri / rd &
                 - gama * wr(nr)**2 * dot_product(rij, vij) / nr &
                 + sqrt(2*gama*kT) * wr(nr) * gaussnum() / sqrt(dt)
             fcube(i, j, :) = fpair / nr * rij(:)
@@ -129,14 +138,15 @@ end function
 
 
 subroutine compute_force(F, vir, sigma, &
-        X, V, rho2, bl, ip_a, ip_b, rd, box, gama, kT, dt)
+        X, V, rho2, bl, ip_a, ip_b, ip_rd, n_wrap, n_rho, &
+        box, gama, kT, dt)
     real(8), intent(inout) :: F(:, :), vir, sigma(3)
     integer, intent(in) :: bl(:)
     real(8), intent(in) :: X(:, :), V(:, :), rho2(:, :)
-    real(8), intent(in) :: ip_a(:, :), ip_b, rd(:, :)
+    real(8), intent(in) :: ip_a(:, :), ip_b, ip_rd(:, :), n_wrap(:), n_rho(:, :)
     real(8), intent(in) :: box(3, 3), gama, kT, dt
-    real(8) :: g(3), rij(3), vij(3), inv_box(3, 3), volume, fpair, a, b, nr
-    real(8) :: rhoi, rhoj, rdij, nc, pi
+    real(8) :: g(3), rij(3), vij(3), inv_box(3, 3), volume, fpair, a, nr
+    real(8) :: rhoi, rhoj, rd, nrm, pi, nwi, nwj, nri
     integer :: i, j, N
     real(8) :: fcube(size(X, 1), size(X, 1), 3)
     N = size(X, 1)
@@ -144,8 +154,11 @@ subroutine compute_force(F, vir, sigma, &
     g = 0.0
     fpair = 0.0
     inv_box = 0.0
-    rdij = 0.0
-    nc = 0.0
+    rd = 0.0
+    nwi = 0.0
+    nwj = 0.0
+    nri = 0.0
+    nrm = 0.0
     volume = 1.0
     pi = 4.0 * atan(1.0)
 
@@ -166,16 +179,19 @@ subroutine compute_force(F, vir, sigma, &
             rij = matmul(box, g)
             vij = V(i, :) - V(j, :)
 
-            a = ip_a(bl(i), bl(j))
-            b = ip_b
             nr = norm2(rij)
+            a = ip_a(bl(i), bl(j))
+            rd = ip_rd(bl(i), bl(j))
+            nwi = n_wrap(bl(i))
+            nwj = n_wrap(bl(j))
+            nri = n_rho(bl(i), bl(j))
+            nrm = (nri+1.0)*(nri+2.0)*(nri+3.0) / (8.0*pi*rd*rd*rd)
             rhoi = rho2(i, bl(j))
             rhoj = rho2(j, bl(j))
-            rdij = rd(bl(i), bl(j))
-            nc = 30.0 / (2.0*pi*rdij*rdij*rdij*rdij)
 
             fpair = a * wr(nr) &
-                + b * (rhoi + rhoj) * nc * wdd(nr, rdij) &
+                + ip_b * (rhoi**(nwi-1.0) + rhoj**(nwj-1.0)) &
+                    * nrm * wdd(nr, rd)**(nri-1.0) * nri / rd &
                 - gama * wr(nr)**2 * dot_product(rij, vij) / nr &
                 + sqrt(2*gama*kT) * wr(nr) * gaussnum() / sqrt(dt)
             fcube(i, j, :) = fpair / nr * rij(:)
@@ -196,13 +212,14 @@ end subroutine
 
 
 function compute_force_cube(X, V, rho2, bl, &
-        ip_a, ip_b, rd, box, gama, kT, dt) result (fcube)
+        ip_a, ip_b, ip_rd, n_wrap, n_rho, &
+        box, gama, kT, dt) result (fcube)
     integer, intent(in) :: bl(:)
     real(8), intent(in) :: X(:, :), V(:, :), rho2(:, :)
-    real(8), intent(in) :: ip_a(:, :), ip_b, rd(:, :)
+    real(8), intent(in) :: ip_a(:, :), ip_b, ip_rd(:, :), n_wrap(:), n_rho(:, :)
     real(8), intent(in) :: box(3, 3), gama, kT, dt
-    real(8) :: g(3), rij(3), vij(3), inv_box(3, 3), fpair, a, b, nr
-    real(8) :: rhoi, rhoj, rdij, nc, pi
+    real(8) :: g(3), rij(3), vij(3), inv_box(3, 3), fpair, a, nr
+    real(8) :: rhoi, rhoj, rd, nrm, pi, nwi, nwj, nri
     integer :: i, j, N
     real(8) :: fcube(size(X, 1), size(X, 1), 3)
     N = size(X, 1)
@@ -210,8 +227,12 @@ function compute_force_cube(X, V, rho2, bl, &
     g = 0.0
     fpair = 0.0
     inv_box = 0.0
-    rdij = 0.0
-    nc = 0.0
+    rd = 0.0
+    nwi = 0.0
+    nwj = 0.0
+    nri = 0.0
+    nrm = 0.0
+    nrm = 0.0
     pi = 4.0 * atan(1.0)
 
     forall (i = 1:3) inv_box(i, i) = 1.0 / box(i, i)
@@ -224,16 +245,19 @@ function compute_force_cube(X, V, rho2, bl, &
             rij = matmul(box, g)
             vij = V(i, :) - V(j, :)
 
-            a = ip_a(bl(i), bl(j))
-            b = ip_b
             nr = norm2(rij)
+            a = ip_a(bl(i), bl(j))
+            rd = ip_rd(bl(i), bl(j))
+            nwi = n_wrap(bl(i))
+            nwj = n_wrap(bl(j))
+            nri = n_rho(bl(i), bl(j))
+            nrm = (nri+1.0)*(nri+2.0)*(nri+3.0) / (8.0*pi*rd*rd*rd)
             rhoi = rho2(i, bl(j))
             rhoj = rho2(j, bl(j))
-            rdij = rd(bl(i), bl(j))
-            nc = 30.0 / (2.0*pi*rdij*rdij*rdij*rdij)
 
             fpair = a * wr(nr) &
-                + b * nc * (rhoi + rhoj) * wdd(nr, rdij) &
+                + ip_b * (rhoi**(nwi-1.0) + rhoj**(nwj-1.0)) &
+                    * nrm * wdd(nr, rd)**(nri-1.0) * nri / rd &
                 - gama * wr(nr)**2 * dot_product(rij, vij) / nr &
                 + sqrt(2*gama*kT) * wr(nr) * gaussnum() / sqrt(dt)
             fcube(i, j, :) = fpair / nr * rij(:)
@@ -243,17 +267,17 @@ function compute_force_cube(X, V, rho2, bl, &
 end function
 
 
-function compute_pe(X, rho2, bl, ip_a, ip_b, box) result (pe)
+function compute_pe(X, rho2, bl, ip_a, ip_b, n_wrap, box) result (pe)
     integer, intent(in) :: bl(:)
     real(8), intent(in) :: X(:, :), rho2(:, :)
-    real(8), intent(in) :: ip_a(:, :), ip_b, box(3, 3)
+    real(8), intent(in) :: ip_a(:, :), ip_b, n_wrap(:), box(3, 3)
     integer :: i, j, N
-    real(8) :: pe, rij(3), g(3), inv_box(3, 3), pi, rdij
+    real(8) :: pe, rij(3), g(3), inv_box(3, 3), pi, nwi
     pe = 0.0
     N = size(X, 1)
     inv_box = 0.0
     pi = 4.0 * atan(1.0)
-    rdij = 0.0
+    nwi = 0.0
 
     forall (i = 1:3) inv_box(i, i) = 1.0 / box(i, i)
     
@@ -268,7 +292,8 @@ function compute_pe(X, rho2, bl, ip_a, ip_b, box) result (pe)
     enddo
 
     do i = 1, n
-        pe = pe + ip_b / 2.0 * sum(rho2(i, :), 1)**2
+        nwi = n_wrap(bl(i))
+        pe = pe + ip_b * sum(rho2(i, :), 1)**nwi / nwi
     enddo
 end function
 
@@ -320,24 +345,27 @@ function init_vel(N, kT) result(V)
 end function
 
 
-subroutine euler_step(X, V, rho2, bl, nbt, ip_a, ip_b, rd, box, gama, kT, dt)
+subroutine euler_step(X, V, rho2, bl, nbt, ip_a, ip_b, ip_rd, n_wrap, n_rho, &
+    box, gama, kT, dt)
     real(8), intent(inout) :: X(:, :), V(:, :), rho2(:, :)
-    real(8), intent(in) :: ip_a(:, :), ip_b, rd(:, :)
+    real(8), intent(in) :: ip_a(:, :), ip_b, ip_rd(:, :), n_wrap(:), n_rho(:, :)
     integer, intent(in) :: bl(:), nbt
     real(8), intent(in) :: box(3, 3), gama, kT, dt
     real(8) :: F(size(X, 1), 3)
     F = 0.0
 
-    rho2 = local_density(X, bl, nbt, rd, box)
-    F = compute_force_fun(X, V, rho2, bl, ip_a, ip_b, rd, box, gama, kT, dt)
+    rho2 = local_density(X, bl, nbt, ip_rd, n_rho, box)
+    F = compute_force_fun(X, V, rho2, bl, ip_a, ip_b, ip_rd, n_wrap, n_rho, &
+        box, gama, kT, dt)
     V(:, :) = V(:, :) + F(:, :) * dt
     X(:, :) = X(:, :) + V(:, :) * dt
 end subroutine
 
 
-subroutine verlet_step(X, V, F, rho2, bl, nbt, ip_a, ip_b, rd, box, gama, kT, dt)
+subroutine verlet_step(X, V, F, rho2, bl, nbt, ip_a, ip_b, ip_rd, &
+    n_wrap, n_rho, box, gama, kT, dt)
     real(8), intent(inout) :: X(:, :), V(:, :), F(:, :), rho2(:, :)
-    real(8), intent(in) :: ip_a(:, :), ip_b, rd(:, :)
+    real(8), intent(in) :: ip_a(:, :), ip_b, ip_rd(:, :), n_wrap(:), n_rho(:, :)
     integer, intent(in) :: bl(:), nbt
     real(8), intent(in) :: box(3, 3), gama, kT, dt
     real(8) :: V2(size(X, 1), 3)
@@ -345,8 +373,9 @@ subroutine verlet_step(X, V, F, rho2, bl, nbt, ip_a, ip_b, rd, box, gama, kT, dt
 
     V2(:, :) = V(:, :) + 0.5 * F(:, :) * dt
     X(:, :) = X(:, :) + V2(:, :) * dt
-    rho2 = local_density(X, bl, nbt, rd, box)
-    F = compute_force_fun(X, V2, rho2, bl, ip_a, ip_b, rd, box, gama, kT, dt)
+    rho2 = local_density(X, bl, nbt, ip_rd, n_rho, box)
+    F = compute_force_fun(X, V2, rho2, bl, ip_a, ip_b, ip_rd, n_wrap, n_rho, &
+        box, gama, kT, dt)
     V(:, :) = V2(:, :) + 0.5 * F(:, :) * dt
 end subroutine
 
