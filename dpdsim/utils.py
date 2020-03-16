@@ -31,6 +31,22 @@ def compute_profile(sim, ax, bt, N_bins=100):
 
 
 def compute_profile_from_frames(frames_str, ax, bt, box, N_bins=100, verbose=False):
+    """
+    Compute a density profile from a batch of xyz frames.
+    
+    Input
+    =====
+    - frames_str: a regex containing frames in xyz format
+    - ax: axis along which to compute the profile
+    - bt: bead type
+    - box: box size, a (3, 3) matrix
+    - N_bins: number of bins
+
+    Output
+    ======
+    - r: a vector of positions
+    - pr: a vector of density profile
+    """
     frames = glob.glob(frames_str)
     assert len(frames) != 0, "No xyz frames captured."
     Nf = len(frames)
@@ -91,7 +107,22 @@ def compute_rdf(sim, bt, N_bins=100, verbose=False):
 
 
 def compute_rdf_from_frames(frames_str, bt, box, N_bins=100, verbose=False):
-    """Read in a batch of frames via regex and compute RDF."""
+    """
+    Read in a batch of xyz frames via regex and compute
+    a radial distribution function.
+    
+    Input
+    =====
+    - frames_str: a regex containing frames in xyz format
+    - bt: bead type
+    - box: box size, a (3, 3) matrix
+    - N_bins: number of bins
+
+    Output
+    ======
+    - r: a vector of positions
+    - rdf: a vector of d radial distribution function
+    """
     frames = glob.glob(frames_str)
     assert len(frames) != 0, "No xyz frames captured."
     Nf = len(frames)
