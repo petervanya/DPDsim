@@ -30,7 +30,8 @@ def compute_profile(sim, ax, bt, N_bins=100):
     return r, pr
 
 
-def compute_profile_from_frames(frames_str, ax, bt, box, N_bins=100, verbose=False):
+def compute_profile_from_frames(frames_str, ax, bt, box, N_bins=100, \
+    shift=None, verbose=False):
     """
     Compute a density profile from a batch of xyz frames.
     
@@ -44,8 +45,8 @@ def compute_profile_from_frames(frames_str, ax, bt, box, N_bins=100, verbose=Fal
 
     Output
     ======
-    - r: a vector of positions
-    - pr: a vector of density profile
+    - r: position vector
+    - pr: density profile vector
     """
     frames = glob.glob(frames_str)
     assert len(frames) != 0, "No xyz frames captured."
@@ -64,6 +65,13 @@ def compute_profile_from_frames(frames_str, ax, bt, box, N_bins=100, verbose=Fal
 
     for frame in frames:
         bl, X0 = read_xyz(frame)
+
+        if shift is not None:
+            assert len(shift) == 3, "Vector of shifting must be of size 3."
+            shift = np.array(shift)
+            X0 = X0 + shift
+            X0 = X0 % L
+
         if bt == -1:
             X = X0
         else:
@@ -75,6 +83,20 @@ def compute_profile_from_frames(frames_str, ax, bt, box, N_bins=100, verbose=Fal
 
 
 def compute_rdf(sim, bt, N_bins=100, verbose=False):
+    """
+    Compute rdf for a 
+
+    Input
+    =====
+    - sim: a dpdsim object containing coordinates and box
+    - bt: bead type
+
+    Output
+    ======
+    - r: a vector of positions
+    - rdf: a vector of d radial distribution function
+    - N_bins: number of bins [default: 100]
+    """
     if type(bt) == int:
         bts = [bt]
     elif type(bt) in [list, tuple]:
@@ -116,7 +138,7 @@ def compute_rdf_from_frames(frames_str, bt, box, N_bins=100, verbose=False):
     - frames_str: a regex containing frames in xyz format
     - bt: bead type
     - box: box size, a (3, 3) matrix
-    - N_bins: number of bins
+    - N_bins: number of bins [default: 100]
 
     Output
     ======
@@ -137,6 +159,9 @@ def compute_rdf_from_frames(frames_str, bt, box, N_bins=100, verbose=False):
     else:
         raise TypeError("Wrong type of bt: %s." % type(bt))
     
+    if len(np.array(box).shape) == 1:
+        box = np.diag(box) # convert to numpy matrix
+    box = np.array(box).astype(float) # ensure correct data type
     bins = np.linspace(0, np.min(np.diag(box)) / 2, N_bins + 1)
     dr = bins[1] - bins[0]
     r = dr / 2.0 + bins[:-1]
