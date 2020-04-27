@@ -18,12 +18,10 @@ are dealt with in two ways:
 * A Fortran module linked via f2py
 * Enhancement with Numba (a JIT compiler)
 
-There are ad hoc versions in pure Fortran and Julia, which are not developed anymore.
-
-The recommended and most developed way to simulate is via the package `dpdsim`.
-
 Post-processing tools to compute density profiles and radial distribution functions
-are `utils.py`.
+are in `utils.py`.
+
+There are ad hoc versions in pure Fortran and Julia, which are not developed anymore.
 
 
 ## Example
@@ -35,23 +33,34 @@ sim.create_particle_inputs(kind="pure") # alternative is binary
 sim.run()
 ```
 
-Other force fields are handled in the same way.
+Other force fields (MDPD, EMDPD, GMDPD) are handled in the same way.
 
-Separate functions can be accessed as follows:
+Access to key functions:
 ```Python
-sim.compute_pe() # returns potential enerigy
-sim.compute_ke() # returns kinetic energy
-sim.compute_local_density() # computes MDPD local density
-sim.compute_force() # computes force, virial and the stress tensor diagonal
+sim.compute_pe()             # returns potential enerigy
+sim.compute_ke()             # returns kinetic energy
+sim.compute_local_density()  # computes MDPD local density stored in "sim.rho2"
+sim.compute_force()          # computes force, virial and the stress tensor diagonal
 ```
 
+Post-processing from within Python:
+```Python
+from dpdsim.utils import compute_profile, compute_rdf
+# run with DPDSim object "sim"
+r_pr, pr = compute_profile(sim, 0, 1, N_bins=50) # 0 for x-coord, 1 for particle type
+r_rdf, rdf = compute_rdf(sim, 1, N_bins=50)      # 1 for particle type
+```
+
+
 ## Requirements
-* a Fortran compiler
-* numpy, numba, pandas, docopt
+* Python 3
+* numpy, numba, pandas
+* a Fortran compiler (gnu95 is used here)
 
 
 ## Performance
-Fortran-optimised code is about an order of magnitude faster than Python/Numba.
+Fortran-optimised code is about an order of magnitude faster 
+than Python optimised with Numba.
 
 
 
