@@ -8,6 +8,9 @@ import time
 from .Fdpd.gmdpd_f import gmdpd_f
 
 
+MAX_VAL = 1.0e16
+
+
 class GMDPDSim():
     """An object to perform a generalised many-body DPD simulation"""
     def __init__(self,
@@ -182,6 +185,9 @@ class GMDPDSim():
 
 
     def compute_local_density(self):
+        """
+        NB: Different shape for Numba and Fortran!
+        """
         if self.imp == "numba":
             self.rho2 = local_density_numba(\
                 self.X, self.bl, self.Nbt, self.Rd, self.ip_N_rho, self.box)
@@ -189,7 +195,7 @@ class GMDPDSim():
         elif self.imp == "fortran":
             if self.rho2 is None:
                 self.rho2 = np.zeros((N, len(set(self.bl))+1), order="F")
-            self.rho2 = gmdpd_f.local_density(self.X, self.bl, self.Nbt, \
+            self.rho2[:, 1:] = gmdpd_f.local_density(self.X, self.bl, self.Nbt, \
                 self.Rd[1:, 1:], self.ip_N_rho[1:, 1:], self.box)
 
 
@@ -212,7 +218,7 @@ class GMDPDSim():
                 self.sigma = np.zeros(3, order="F")
 
             gmdpd_f.compute_force(self.F, self.vir, self.sigma, \
-                self.X, self.V, self.rho2, self.bl, \
+                self.X, self.V, self.rho2[:, 1:], self.bl, \
                 self.ip_A[1:, 1:], self.ip_B, self.Rd[1:, 1:], \
                 self.ip_N_wrap[1:], self.ip_N_rho[1:, 1:], \
                 self.box, self.gama, self.kT, self.dt)
@@ -224,9 +230,10 @@ class GMDPDSim():
                 self.X, self.V, self.rho2, self.bl, \
                 self.ip_A, self.ip_B, self.Rd, self.ip_N_wrap, self.ip_N_rho, \
                 self.box, self.gama, self.kT, self.dt)
+
         elif self.imp == "fortran":
             self.Fcube = gmdpd_f.compute_force_cube(\
-                self.X, self.V, self.rho2, self.bl, \
+                self.X, self.V, self.rho2[:, 1:], self.bl, \
                 self.ip_A[1:, 1:], self.ip_B, self.Rd[1:, 1:], \
                 self.ip_N_wrap[1:], self.ip_N_rho[1:, 1:], \
                 self.box, self.gama, self.kT, self.dt)
@@ -261,12 +268,12 @@ class GMDPDSim():
     def run(self):
         self._verify_integrity()
 
-        ti = time.time()
+        self.tic = time.time()
         self._integrate_numba()
-        tf = time.time()
+        self.toc = time.time()
 
         self._dump_observables()
-        print("Done. Simulation time: %.2f s." % (tf - ti))
+        print("Done. Simulation time: %.2f s." % (self.toc - self.tic))
 
 
     def _integrate_numba(self):
@@ -284,7 +291,7 @@ class GMDPDSim():
             self.Pxx[0], self.Pyy[0], self.Pzz[0] = \
             ke, pe, temp, p, pxx, pyy, pzz
 
-        print("step temp ke pe p pxx pyy pzz")
+        print("step time temp ke pe p pxx pyy pzz")
         for it in range(1, self.Nt+1):
             if self.style == "euler":
                 self._euler_step()
@@ -300,16 +307,54 @@ class GMDPDSim():
             pxx, pyy, pzz = self.sigma
             p = (pxx + pyy + pzz) / 3.0
 
+            # check for overflow
+            assert np.isnan(self.F).sum() == 0, "NaN in forces."
+            assert np.isnan(self.V).sum() == 0, "NaN in velocities."
+            assert np.isnan(self.X).sum() == 0, "NaN in positions."
+
             self.KE[it], self.PE[it], self.T[it], self.P[it], \
                 self.Pxx[it], self.Pyy[it], self.Pzz[it] = \
                 ke, pe, temp, p, pxx, pyy, pzz
  
             if it % self.thermo == 0:
-                print("%3.i %.5f %.3e %.3e %.3e %.3e %.3e %.3e" % \
-                    (it, temp, ke, pe, p, pxx, pyy, pzz))
+                self.toc = time.time()
+                print("%3.i %.1i %.5f %.3e %.3e %.3e %.3e %.3e %.3e" % \
+                    (it, self.toc-self.tic, temp, ke, pe, p, pxx, pyy, pzz))
 
             if it >= self.Neq and it % self.df == 0:
                 self.save_frames(it)
+
+    
+    def minimise(self, Nit=10, w=1e-7, thermo=10):
+        """Minimise the energy via force/gradient descent.
+        Implemented only for Numba so far"""
+        self._verify_integrity()
+        if self.F is None:
+            self.F = np.zeros_like(self.X, order="F")
+
+        self.compute_local_density()
+        print("Minimising... Initial PE: %.3e" % self.compute_pe())
+        print("step time pe")
+        tic = time.time()
+
+        for i in range(1, Nit+1):
+            self.compute_local_density()
+            self.F, _, _ = force_numba(\
+                self.X, np.zeros_like(self.X), self.rho2, self.bl, self.ip_A, \
+                self.ip_B, self.Rd, self.ip_N_wrap, self.ip_N_rho, \
+                self.box, 0.0, 0.0, self.dt)
+
+            assert np.isnan(self.F).sum() == 0, "NaN in forces."
+            self.X += self.F * w
+            self.X = self.X % np.diag(self.box)
+            PE = self.compute_pe()
+
+            toc = time.time()
+            if i % thermo == 0:
+                print("%i %i %.3e" % (i, toc - tic, PE))
+        
+        self.F = np.asfortranarray(self.F)
+        print("Done. Time: %.2f s" % (toc - tic))
 
 
     def _verify_integrity(self):
@@ -351,7 +396,7 @@ class GMDPDSim():
 def parse_box(L):
     """Input: a float or a vector of length 3"""
     if type(L) == list and len(L) == 3:
-        box = np.diag(L)
+        box = np.diag(L).astype(float)
     elif type(L) == float or type(L) == int:
         box = np.eye(3) * float(L)
     else:
@@ -488,6 +533,11 @@ def force_numba(X, V, rho2, bl, ip_A, ip_B, Rd, ip_N_wrap, ip_N_rho, \
 
             vir += Fcube[i, j, :] @ rij
             sigma += Fcube[i, j, :] * rij
+
+            if np.isnan(fpair):
+                print(fpair, i, j, bl[i], bl[j], "\n", \
+                rhoi, rhoj, nrm, wr(nr/rd), nrho, gamma, rij, vij, sqrt(dt))
+                assert False, "NaN in forces."
 
     for i in range(N):
         sigma += V[i] * V[i]
