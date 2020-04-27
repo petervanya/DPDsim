@@ -8,9 +8,15 @@ import time
 import glob
 
 
-def compute_profile(sim, ax, bt, N_bins=100):
+def compute_profile(sim, ax, bt, N_bins=100, shift=None):
     """
     Compute a profile along the specificed coordinate.
+
+    Input
+    =====
+    - ax: axis, from (0, 1, 2)
+    - bt: bead type, from available types, -1 for all
+    - N_bins: number of histogram bins
     """
     L = np.diag(sim.box)
     bins = np.linspace(0, L[ax], N_bins+1)
@@ -20,10 +26,18 @@ def compute_profile(sim, ax, bt, N_bins=100):
     Lsurf = L[list(set(range(3)).difference([ax]))] # cross-sectional surface
     pr = np.zeros_like(r)
 
-    if bt == -1:    # choose all beads
-        X = sim.X
-    else:
-        X = sim.X[sim.bl == bt]
+    X = sim.X.copy()
+    if shift is not None:
+        assert hasattr(shift, "__iter__") and len(shift) == 3, \
+            "Vector of shifting must be of size 3."
+        shift = np.array(shift)
+        X = X + shift
+        X = X % L
+
+#    if bt == -1:    # choose all beads
+#        X = sim.X
+    if bt != -1:
+        X = X[sim.bl == bt]
     pr, _ = np.histogram(X[:, ax], bins=bins)
 
     pr = pr / (dr * np.prod(Lsurf))
