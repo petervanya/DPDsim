@@ -250,12 +250,12 @@ class MDPDSim():
     def run(self):
         self._verify_integrity()
 
-        ti = time.time()
+        self.tic = time.time()
         self._integrate_numba()
-        tf = time.time()
+        self.toc = time.time()
 
         self._dump_observables()
-        print("Done. Simulation time: %.2f s." % (tf - ti))
+        print("Done. Simulation time: %.2f s." % (self.toc - self.tic))
 
 
     def _integrate_numba(self):
@@ -273,7 +273,7 @@ class MDPDSim():
             self.Pxx[0], self.Pyy[0], self.Pzz[0] = \
             ke, pe, temp, p, pxx, pyy, pzz
 
-        print("step temp ke pe p pxx pyy pzz")
+        print("step time temp ke pe p pxx pyy pzz")
         for it in range(1, self.Nt+1):
             if self.style == "euler":
                 self._euler_step()
@@ -294,8 +294,9 @@ class MDPDSim():
                 ke, pe, temp, p, pxx, pyy, pzz
  
             if it % self.thermo == 0:
-                print("%3.i %.5f %.3e %.3e %.3e %.3e %.3e %.3e" % \
-                    (it, temp, ke, pe, p, pxx, pyy, pzz))
+                self.toc = time.time()
+                print("%3.i %.1i %.5f %.3e %.3e %.3e %.3e %.3e %.3e" % \
+                    (it, self.toc-self.tic, temp, ke, pe, p, pxx, pyy, pzz))
 
             if it >= self.Neq and it % self.df == 0:
                 self.save_frames(it)
