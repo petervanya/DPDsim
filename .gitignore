@@ -19,4 +19,7 @@ dpdsim/Fdpd/Test/
 dpdsim/Fdpd/main
 dpdsim/Fdpd/CONFIG.xyz
 dpdsim/Fdpd/CONFIG.vel
+
 Testing/
+.DS_Store
+TODO.md
