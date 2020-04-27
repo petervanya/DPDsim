@@ -1,10 +1,10 @@
 #!/bin/bash
 
 echo "Compiling..."
-cd Fdpd
+cd dpdsim/Fdpd
 make
 make f2py
-cd ..
+cd ../..
 
 fname=".bashrc.dpd"
 cat >$HOME/$fname<<EOF
@@ -15,8 +15,5 @@ EOF
 cdir=$(pwd)
 
 echo 'export PYTHONPATH=$PYTHONPATH:'$cdir >>$HOME/$fname
-echo 'export PYTHONPATH=$PYTHONPATH:'$cdir/Fdpd >>$HOME/$fname
-echo "" >>$HOME/$fname
-echo 'export PATH=$PATH':$cdir >>$HOME/$fname
 
-echo "Add "source $fname" to your .bashrc file."
+echo "Add "source $fname" to your .bashrc file to update PYTHONPATH."
