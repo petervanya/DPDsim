@@ -6,6 +6,7 @@ a coarse-grained molecular dynamics method.
 1. Standard dissipative particle dynamics (DPD), source: [Groot and Warren, JCP, 1997](https://doi.org/10.1063/1.474784)
 2. Many-body dissipative particle dynamics (MDPD), source: [Warren, PRE, 2003](https://doi.org/10.1103/PhysRevE.68.066702)
 3. A generalised many-body DPD with freedom in defining local density and wrapping function (GMDPD)
+   presented in [Vanya and Elliott, PRE, 2020](https://doi.org/10.1103/PhysRevE.102.013312)
 
 This implementation of DPD/MDPD allows non-bonded particles only. 
 For more complex simulations of polymers, [DL_MESO](https://www.scd.stfc.ac.uk/Pages/DL_MESO.aspx) 
@@ -13,15 +14,21 @@ or [LAMMPS](https://github.com/lammps/lammps) are recommended.
 
 
 ## Code versions
-The default language is Python. Key bottlenecks involving force and energy computation
-are dealt with in two ways:
+The default language is Python. 
+Key bottlenecks involving force and energy computation are optimised in two ways:
 * A Fortran module linked via f2py
 * Enhancement with Numba (a JIT compiler)
 
 Post-processing tools to compute density profiles and radial distribution functions
 are in `utils.py`.
 
-There are ad hoc versions in pure Fortran and Julia, which are not developed anymore.
+There are ad hoc versions in pure Fortran and Julia not developed anymore.
+
+
+## Requirements
+* Python 3
+* numpy, numba, pandas
+* a Fortran compiler (gnu95 is used here)
 
 
 ## Example
@@ -52,15 +59,8 @@ r_rdf, rdf = compute_rdf(sim, 1, N_bins=50)      # 1 for particle type
 ```
 
 
-## Requirements
-* Python 3
-* numpy, numba, pandas
-* a Fortran compiler (gnu95 is used here)
-
-
 ## Performance
-Fortran-optimised code is about an order of magnitude faster 
-than Python optimised with Numba.
+Fortran-optimised code is about an order of magnitude faster than Python/Numba.
 
 
 
