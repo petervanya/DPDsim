@@ -23,3 +23,5 @@ dpdsim/Fdpd/CONFIG.vel
 Testing/
 .DS_Store
 TODO.md
+venv
+Old/
