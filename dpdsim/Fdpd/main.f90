@@ -11,7 +11,7 @@ real(8) :: L, box(3, 3), ip(1, 1), gama, kT, dt
 real(8) :: ti, tf
 real(8), allocatable :: X(:, :), V(:, :), KE(:), PE(:)
 integer :: si, sn
-character(30) :: infile
+!character(30) :: infile
 sn = 12
 call random_seed(size=sn)
 call random_seed(put=(/ (0, si=1, sn) /))

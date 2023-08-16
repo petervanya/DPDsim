@@ -1,6 +1,9 @@
 #!/bin/bash
 
-echo -e "\n===== Creating virtual environment..."
+echo -e "\n==== Installing DPDsim ====="
+echo "Creating virtual environment..."
+
+rm -rf venv
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -10,7 +13,7 @@ cd dpdsim/Fdpd
 make
 make f2py
 cd ../..
-echo -e "Compilation done."
+echo -e "\nCompilation done."
 
 fname=".bashrc.dpd"
 cat > $HOME/$fname << EOF
